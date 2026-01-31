@@ -1,0 +1,5 @@
+{
+  "name": "Strata Audit AI Workshop",
+  "description": "A compliant Strata Audit Logic Engine that processes audit evidence (PDFs/Excels) against strict regulatory modules to produce verified findings.",
+  "requestFramePermissions": []
+}

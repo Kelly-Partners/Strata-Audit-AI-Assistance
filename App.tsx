@@ -1,0 +1,625 @@
+
+
+
+import React, { useState, useEffect, useRef } from 'react';
+import { FileUpload } from './components/FileUpload';
+import { AuditReport } from './components/AuditReport';
+import { analyzeAuditFiles } from './services/geminiService';
+import { AuditResponse, Plan, PlanStatus, TriageItem } from './types';
+
+const App: React.FC = () => {
+  // Global App State
+  const [apiKey, setApiKey] = useState('');
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  
+  // UI State
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  // Derived Active Plan
+  const activePlan = plans.find(p => p.id === activePlanId) || null;
+
+  // Auto-load API Key
+  useEffect(() => {
+    if (process.env.API_KEY) {
+      setApiKey(process.env.API_KEY);
+    }
+  }, []);
+
+  // --- PLAN MANAGEMENT HELPERS ---
+
+  const createPlan = (initialFiles: File[] = []): string => {
+    const newPlan: Plan = {
+      id: crypto.randomUUID(),
+      name: initialFiles.length > 0 ? initialFiles[0].name.split('.')[0] : `Audit Plan ${plans.length + 1}`,
+      createdAt: Date.now(),
+      status: 'idle',
+      files: initialFiles,
+      result: null,
+      triage: [], // Init empty triage
+      error: null
+    };
+    setPlans(prev => [...prev, newPlan]);
+    return newPlan.id;
+  };
+
+  const updatePlan = (id: string, updates: Partial<Plan>) => {
+    setPlans(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const deletePlan = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setPlans(prev => prev.filter(p => p.id !== id));
+    if (activePlanId === id) setActivePlanId(null);
+  };
+
+  // --- TRIAGE / FLAG HANDLER ---
+  const handleTriage = (item: TriageItem, action: 'add' | 'remove') => {
+    if (!activePlanId) return;
+    
+    setPlans(prev => prev.map(p => {
+       if (p.id !== activePlanId) return p;
+       
+       if (action === 'add') {
+         // Upsert based on rowId to allow editing
+         const existing = p.triage.find(t => t.rowId === item.rowId);
+         if (existing) {
+            return {
+               ...p,
+               triage: p.triage.map(t => t.rowId === item.rowId ? item : t)
+            };
+         }
+         return { ...p, triage: [...p.triage, item] };
+       } else {
+         return { ...p, triage: p.triage.filter(t => t.id !== item.id) };
+       }
+    }));
+  };
+
+  // --- LOGIC ENGINE EXECUTION ---
+
+  const handleRunAudit = async (planId: string) => {
+    const targetPlan = plans.find(p => p.id === planId);
+    if (!targetPlan) return;
+
+    if (!apiKey) {
+      updatePlan(planId, { error: "Please provide a valid Gemini API Key in Settings." });
+      return;
+    }
+    if (targetPlan.files.length === 0) {
+      updatePlan(planId, { error: "No evidence files found." });
+      return;
+    }
+
+    // Set Processing State
+    updatePlan(planId, { status: 'processing', error: null });
+    setIsUploadModalOpen(false); // Close modal if open
+
+    try {
+      // Async Execution (Concurrent)
+      // Note: We use the functional update inside the promise to ensure we reference the latest state if needed,
+      // but here we just need to overwrite the result.
+      const auditResult = await analyzeAuditFiles(apiKey, targetPlan.files, targetPlan.result);
+      
+      // Check if plan was cancelled (status changed to idle/failed) while processing
+      setPlans(currentPlans => {
+         const currentPlan = currentPlans.find(p => p.id === planId);
+         if (currentPlan && currentPlan.status === 'processing') {
+             return currentPlans.map(p => p.id === planId ? { ...p, status: 'completed', result: auditResult } : p);
+         }
+         return currentPlans;
+      });
+
+    } catch (err: any) {
+      setPlans(currentPlans => {
+         const currentPlan = currentPlans.find(p => p.id === planId);
+         // Only show error if not cancelled
+         if (currentPlan && currentPlan.status !== 'idle') {
+             return currentPlans.map(p => p.id === planId ? { ...p, status: 'failed', error: err.message || "Execution Failed" } : p);
+         }
+         return currentPlans;
+      });
+    }
+  };
+
+  // --- GLOBAL DRAG & DROP HANDLERS ---
+  useEffect(() => {
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      dragCounter.current++;
+      if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) setIsDragging(true);
+    };
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      dragCounter.current--;
+      if (dragCounter.current === 0) setIsDragging(false);
+    };
+    const handleDragOver = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
+    
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      setIsDragging(false);
+      dragCounter.current = 0;
+
+      if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+        const newFiles = Array.from(e.dataTransfer.files).filter(f => 
+             f.name.match(/\.(pdf|xlsx|csv)$/i) || f.type.includes('pdf') || f.type.includes('sheet') || f.type.includes('csv')
+        );
+        
+        if (newFiles.length > 0) {
+            if (activePlanId) {
+                // If inside a plan, append to current plan and open modal
+                const currentFiles = activePlan?.files || [];
+                updatePlan(activePlanId, { files: [...currentFiles, ...newFiles] });
+                setIsUploadModalOpen(true);
+            } else {
+                // If on dashboard, create NEW plan
+                const newId = createPlan(newFiles);
+                setActivePlanId(newId);
+                setIsUploadModalOpen(true);
+            }
+        }
+      }
+    };
+
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [activePlanId, activePlan, plans]); // Re-bind if active context changes
+
+  // Helper to get triage counts
+  const getTriageCount = (severity: string) => activePlan?.triage.filter(t => t.severity === severity).length || 0;
+
+  return (
+    <div className="flex h-screen bg-[#FAFAFA] text-[#111111] font-sans overflow-hidden relative">
+      
+      {/* --- GLOBAL DRAG OVERLAY --- */}
+      {isDragging && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in m-4 rounded-xl border-4 border-dashed border-[#C5A059] shadow-2xl pointer-events-none">
+           <div className="bg-[#C5A059] p-6 rounded-full mb-6 shadow-lg shadow-[#C5A059]/50 animate-bounce">
+              <svg className="w-16 h-16 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4 4m4-4v12"></path></svg>
+           </div>
+           <h2 className="text-3xl font-bold text-white uppercase tracking-widest mb-2">
+             {activePlanId ? "Add Evidence to Plan" : "Create New Audit Plan"}
+           </h2>
+           <p className="text-[#C5A059] font-medium tracking-wide">Release files to ingest</p>
+        </div>
+      )}
+      
+      {/* --- SIDEBAR NAVIGATION --- */}
+      <aside className="w-72 bg-[#111] text-white flex flex-col shrink-0 border-r border-gray-800 relative z-20 shadow-xl">
+        {/* Brand */}
+        <div className="p-6 border-b border-gray-800 flex items-center gap-3">
+           <div className="h-8 w-8 bg-[#C5A059] flex items-center justify-center font-bold text-black rounded-sm shrink-0">S</div>
+           <div>
+             <h1 className="text-sm font-bold tracking-widest uppercase leading-none">Strata</h1>
+             <h1 className="text-sm font-bold tracking-widest uppercase text-[#C5A059] leading-none">Audit Engine</h1>
+           </div>
+        </div>
+
+        {/* Global Nav */}
+        <div className="px-4 py-4 border-b border-gray-800">
+             <button 
+               onClick={() => setActivePlanId(null)}
+               className={`w-full flex items-center gap-3 px-4 py-3 rounded-sm transition-all text-xs font-bold uppercase tracking-wider ${activePlanId === null ? 'bg-[#C5A059] text-black shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+             >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                Plan Dashboard
+             </button>
+        </div>
+
+        {/* Plan List (Project Manager) */}
+        <div className="px-6 py-6 flex-1 overflow-y-auto custom-scrollbar">
+           
+           {!activePlan && (
+             <div className="mb-6">
+               <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Your Projects</h3>
+                  <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{plans.length}</span>
+               </div>
+               
+               <div className="space-y-1">
+                  {plans.length === 0 && <div className="text-xs text-gray-600 italic py-2">No active plans.</div>}
+                  {plans.map(plan => (
+                     <div 
+                       key={plan.id}
+                       onClick={() => setActivePlanId(plan.id)}
+                       className={`group flex items-center gap-3 p-2 rounded cursor-pointer transition-colors border-l-2 border-transparent hover:bg-white/5`}
+                     >
+                        <div className="relative">
+                           <div className={`w-2 h-2 rounded-full ${
+                              plan.status === 'completed' ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.8)]' :
+                              plan.status === 'processing' ? 'bg-yellow-400 animate-pulse shadow-[0_0_5px_rgba(250,204,21,0.8)]' :
+                              plan.status === 'failed' ? 'bg-red-500' : 'bg-gray-600'
+                           }`}></div>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                           <div className={`text-xs font-bold leading-tight truncate text-gray-400 group-hover:text-gray-200`}>{plan.name}</div>
+                        </div>
+                     </div>
+                  ))}
+               </div>
+             </div>
+           )}
+
+           {/* TRIAGE SECTION (Only if Plan Active) */}
+           {activePlan && (
+             <div className="animate-fade-in">
+                <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
+                   <h3 className="text-[10px] font-bold text-[#C5A059] uppercase tracking-widest">Triage Dashboard</h3>
+                   <span className="text-[10px] font-bold text-white bg-red-600/20 px-1.5 rounded text-red-500">{activePlan.triage.length}</span>
+                </div>
+                
+                {activePlan.triage.length === 0 ? (
+                    <div className="text-center py-10 opacity-30">
+                       <svg className="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                       <p className="text-[10px] font-bold uppercase">All Clean</p>
+                       <p className="text-[9px]">Hover rows to flag issues</p>
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                       {/* CRITICAL */}
+                       {getTriageCount('critical') > 0 && (
+                          <div>
+                             <h4 className="text-[9px] font-bold text-red-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span> Critical ({getTriageCount('critical')})
+                             </h4>
+                             <div className="space-y-2">
+                                {activePlan.triage.filter(t => t.severity === 'critical').map(t => (
+                                   <div key={t.id} className="bg-red-900/20 border-l-2 border-red-500 p-2 rounded-r hover:bg-red-900/40 cursor-pointer group relative">
+                                       <button onClick={(e) => { e.stopPropagation(); handleTriage(t, 'remove'); }} className="absolute top-1 right-1 text-red-500 opacity-0 group-hover:opacity-100 text-[10px] hover:text-white">✕</button>
+                                       <div className="text-[10px] font-bold text-red-200 truncate mb-1">{t.title}</div>
+                                       <div className="text-[9px] text-gray-400 leading-snug line-clamp-2">{t.comment}</div>
+                                       <div className="mt-1 text-[9px] text-gray-600 uppercase font-mono">{t.tab}</div>
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                       )}
+
+                       {/* MEDIUM */}
+                       {getTriageCount('medium') > 0 && (
+                          <div>
+                             <h4 className="text-[9px] font-bold text-yellow-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span> Medium ({getTriageCount('medium')})
+                             </h4>
+                             <div className="space-y-2">
+                                {activePlan.triage.filter(t => t.severity === 'medium').map(t => (
+                                   <div key={t.id} className="bg-yellow-900/10 border-l-2 border-yellow-500 p-2 rounded-r hover:bg-yellow-900/20 cursor-pointer group relative">
+                                       <button onClick={(e) => { e.stopPropagation(); handleTriage(t, 'remove'); }} className="absolute top-1 right-1 text-yellow-500 opacity-0 group-hover:opacity-100 text-[10px] hover:text-white">✕</button>
+                                       <div className="text-[10px] font-bold text-yellow-200 truncate mb-1">{t.title}</div>
+                                       <div className="text-[9px] text-gray-400 leading-snug line-clamp-2">{t.comment}</div>
+                                       <div className="mt-1 text-[9px] text-gray-600 uppercase font-mono">{t.tab}</div>
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                       )}
+
+                       {/* LOW */}
+                       {getTriageCount('low') > 0 && (
+                          <div>
+                             <h4 className="text-[9px] font-bold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span> Low ({getTriageCount('low')})
+                             </h4>
+                             <div className="space-y-2">
+                                {activePlan.triage.filter(t => t.severity === 'low').map(t => (
+                                   <div key={t.id} className="bg-blue-900/10 border-l-2 border-blue-400 p-2 rounded-r hover:bg-blue-900/20 cursor-pointer group relative">
+                                       <button onClick={(e) => { e.stopPropagation(); handleTriage(t, 'remove'); }} className="absolute top-1 right-1 text-blue-400 opacity-0 group-hover:opacity-100 text-[10px] hover:text-white">✕</button>
+                                       <div className="text-[10px] font-bold text-blue-200 truncate mb-1">{t.title}</div>
+                                       <div className="text-[9px] text-gray-400 leading-snug line-clamp-2">{t.comment}</div>
+                                       <div className="mt-1 text-[9px] text-gray-600 uppercase font-mono">{t.tab}</div>
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                       )}
+                    </div>
+                )}
+             </div>
+           )}
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-6 border-t border-gray-800 text-[10px] text-gray-600 uppercase tracking-widest">
+           <button 
+             onClick={() => {
+                const id = createPlan();
+                setActivePlanId(id);
+                setIsUploadModalOpen(true);
+             }}
+             className="w-full mb-4 border border-gray-700 hover:border-[#C5A059] text-gray-400 hover:text-[#C5A059] py-2 rounded-sm transition-colors flex items-center justify-center gap-2"
+           >
+              <span>+</span> New Plan
+           </button>
+           <div className="flex justify-between">
+              <span>Kernel v2.0</span>
+              <span className={apiKey ? "text-green-600" : "text-gray-600"}>{apiKey ? "API Ready" : "No Key"}</span>
+           </div>
+        </div>
+      </aside>
+
+      {/* --- MAIN CONTENT AREA --- */}
+      <main className="flex-1 overflow-y-auto h-full relative scroll-smooth bg-[#FAFAFA]">
+        
+        {/* --- VIEW: PLAN DASHBOARD (When no active plan) --- */}
+        {!activePlanId && (
+           <div className="max-w-[1600px] mx-auto p-10 animate-fade-in">
+              <div className="flex justify-between items-end mb-10 border-b border-gray-200 pb-6">
+                 <div>
+                    <h2 className="text-3xl font-bold text-black tracking-tight mb-2">Audit Dashboard</h2>
+                    <p className="text-gray-500 text-sm">Manage multiple concurrent audit sessions.</p>
+                 </div>
+                 <div className="text-right">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">System Status</span>
+                    <div className="flex items-center gap-2 mt-1">
+                       <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                       <span className="text-sm font-mono text-gray-700">KERNEL ONLINE</span>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                 {/* Create New Card */}
+                 <button 
+                   onClick={() => {
+                      const id = createPlan();
+                      setActivePlanId(id);
+                      setIsUploadModalOpen(true);
+                   }}
+                   className="group min-h-[240px] border-2 border-dashed border-gray-300 hover:border-[#C5A059] rounded-lg flex flex-col items-center justify-center p-6 transition-all hover:bg-white hover:shadow-lg"
+                 >
+                    <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-[#C5A059] text-gray-400 group-hover:text-black flex items-center justify-center mb-4 transition-colors">
+                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                    </div>
+                    <span className="font-bold text-gray-600 group-hover:text-black uppercase tracking-wider text-sm">Create New Plan</span>
+                 </button>
+
+                 {/* Plan Cards */}
+                 {plans.map(plan => (
+                    <div 
+                      key={plan.id}
+                      onClick={() => setActivePlanId(plan.id)}
+                      className="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col justify-between min-h-[240px] cursor-pointer relative group"
+                    >
+                       <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => deletePlan(plan.id, e)}
+                            className="text-gray-300 hover:text-red-500 p-1"
+                          >
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          </button>
+                       </div>
+
+                       <div>
+                          <div className="flex items-center gap-2 mb-3">
+                             <div className={`w-2 h-2 rounded-full ${
+                                plan.status === 'completed' ? 'bg-green-500' :
+                                plan.status === 'processing' ? 'bg-yellow-400 animate-pulse' :
+                                plan.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
+                             }`}></div>
+                             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{plan.status}</span>
+                          </div>
+                          <h3 className="text-xl font-bold text-black leading-tight mb-2 line-clamp-2">{plan.name}</h3>
+                          <p className="text-xs text-gray-500">{new Date(plan.createdAt).toLocaleDateString()} • {plan.files.length} Files</p>
+                       </div>
+
+                       <div className="mt-4 pt-4 border-t border-gray-100">
+                          {plan.result ? (
+                             <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-gray-600">Traceable Items</span>
+                                <span className="text-lg font-mono font-bold text-[#C5A059]">
+                                   {(plan.result.expense_samples?.length || 0) + (Object.keys(plan.result.levy_reconciliation?.master_table || {}).length)}
+                                </span>
+                             </div>
+                          ) : (
+                             <div className="text-xs text-gray-400 italic">No verification data yet.</div>
+                          )}
+                       </div>
+                    </div>
+                 ))}
+              </div>
+           </div>
+        )}
+
+        {/* --- VIEW: ACTIVE PLAN REPORT --- */}
+        {activePlan && activePlan.status === 'completed' && activePlan.result && (
+           <div className="max-w-[1600px] mx-auto p-10 animate-fade-in">
+              <div className="mb-8 pb-6 border-b border-gray-200 flex items-end justify-between">
+                 <div>
+                    <span className="text-[#C5A059] text-xs font-bold uppercase tracking-wider mb-2 block">Comprehensive Audit Report</span>
+                    <h2 className="text-3xl font-bold text-black tracking-tight flex items-center gap-3">
+                       {activePlan.name}
+                       <button onClick={() => setIsUploadModalOpen(true)} className="text-gray-400 hover:text-black transition-colors">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                       </button>
+                    </h2>
+                 </div>
+                 <div className="text-right">
+                    <div className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">System ID</div>
+                    <div className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">{activePlan.result.intake_summary?.status || 'SYS-INIT'}</div>
+                 </div>
+              </div>
+              <AuditReport 
+                  data={activePlan.result} 
+                  files={activePlan.files}
+                  triageItems={activePlan.triage}
+                  onTriage={handleTriage}
+              />
+           </div>
+        )}
+
+        {/* --- VIEW: EMPTY PLAN / ERROR --- */}
+        {activePlan && (activePlan.status === 'idle' || activePlan.status === 'failed') && (
+            <div className="h-[75vh] flex flex-col items-center justify-center text-center opacity-60">
+                <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-6 text-gray-400">
+                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 uppercase tracking-widest mb-3">
+                   {activePlan.status === 'failed' ? "Execution Failed" : "Ready to Ingest"}
+                </h2>
+                <p className="text-gray-500 max-w-md mx-auto mb-8">
+                  {activePlan.status === 'failed' 
+                    ? `Error: ${activePlan.error}` 
+                    : "Configure this plan by uploading evidence. The Logic Engine is standby."}
+                </p>
+                <button 
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="bg-black text-white hover:bg-[#C5A059] px-6 py-3 font-bold uppercase tracking-widest text-xs rounded transition-colors"
+                >
+                   {activePlan.status === 'failed' ? "Retry Configuration" : "Configure Evidence"}
+                </button>
+            </div>
+        )}
+      </main>
+
+      {/* --- CANCELLABLE LOADING SCREEN (Scoped to Active Plan) --- */}
+      {activePlan && activePlan.status === 'processing' && (
+        <div className="absolute inset-0 z-[200] bg-[#111] flex flex-col items-center justify-center animate-fade-in cursor-wait">
+            <div className="relative mb-8">
+                <div className="w-24 h-24 border-4 border-[#333] rounded-full"></div>
+                <div className="w-24 h-24 border-4 border-t-[#C5A059] border-r-transparent border-b-transparent border-l-transparent rounded-full absolute top-0 left-0 animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[#C5A059] font-bold text-xl animate-pulse">S</span>
+                </div>
+            </div>
+            
+            <h2 className="text-2xl font-bold text-white uppercase tracking-widest mb-1">Processing Audit Logic</h2>
+            <p className="text-gray-500 text-sm mb-8">{activePlan.name}</p>
+
+            <div className="flex flex-col gap-4 min-w-[250px]">
+               {/* 1. Run in Background (Concurrency) */}
+               <button 
+                 onClick={() => setActivePlanId(null)}
+                 className="w-full bg-[#C5A059] hover:bg-[#A08040] text-black font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-xs transition-colors flex items-center justify-center gap-2"
+               >
+                 Run in Background
+               </button>
+            </div>
+
+            <div className="mt-12 text-[#444] text-[10px] font-mono animate-pulse text-center">
+                Validating Evidence Tiers...<br/>
+                Analyzing General Ledger...
+            </div>
+        </div>
+      )}
+
+      {/* --- CONFIGURATION & UPLOAD MODAL --- */}
+      {isUploadModalOpen && activePlan && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+           <div className="bg-white w-full max-w-5xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              
+              {/* Modal Header */}
+              <div className="bg-black text-white px-8 py-6 flex justify-between items-center shrink-0 border-b border-gray-800">
+                 <div className="flex items-center gap-4">
+                    <div className="bg-[#C5A059] h-10 w-10 flex items-center justify-center text-black font-bold rounded-sm text-lg">0</div>
+                    <div>
+                       <h2 className="text-xl font-bold uppercase tracking-widest">Configuration & Evidence</h2>
+                       <p className="text-xs text-gray-400 mt-1 uppercase tracking-wide">Plan: {activePlan.name}</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setIsUploadModalOpen(false)} className="text-gray-500 hover:text-white transition-colors p-2">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                 </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-8 sm:p-10 overflow-y-auto bg-gray-50">
+                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                    
+                    {/* Left Column: Config */}
+                    <div className="lg:col-span-4 space-y-6">
+                       <div className="bg-white p-6 rounded border border-gray-200 shadow-sm">
+                          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">System Credentials</label>
+                          <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide mb-2">Gemini API Key</label>
+                                <input 
+                                    type="password" 
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    placeholder="sk-..."
+                                    className="w-full px-4 py-3 border border-gray-300 rounded text-[14px] focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors font-mono bg-gray-50"
+                                />
+                            </div>
+                            <p className="text-[11px] text-gray-400 leading-relaxed border-l-2 border-[#C5A059] pl-3">
+                                Key is used for this session only.
+                            </p>
+                          </div>
+                       </div>
+                       
+                       <div className="bg-white p-6 rounded border border-gray-200 shadow-sm">
+                           <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Plan Settings</label>
+                           <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide mb-2">Plan Name</label>
+                           <input 
+                              type="text"
+                              value={activePlan.name}
+                              onChange={(e) => updatePlan(activePlan.id, { name: e.target.value })}
+                              className="w-full px-4 py-3 border border-gray-300 rounded text-[14px] focus:border-[#C5A059] focus:outline-none"
+                           />
+                       </div>
+
+                       <div className="bg-blue-50 p-6 rounded border border-blue-100">
+                          <h4 className="text-blue-900 font-bold uppercase text-xs tracking-wide mb-2">Instructions</h4>
+                          <p className="text-blue-800 text-sm leading-relaxed mb-3">
+                             Upload all relevant PDF, Excel, or CSV files for this specific strata plan.
+                          </p>
+                       </div>
+                    </div>
+
+                    {/* Right Column: Upload */}
+                    <div className="lg:col-span-8 space-y-4">
+                      <div className="bg-white p-8 rounded border border-gray-200 shadow-sm h-full flex flex-col">
+                          <div className="mb-6 flex justify-between items-center">
+                             <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide">Evidence Repository</label>
+                             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold uppercase">{activePlan.files.length} Files Selected</span>
+                          </div>
+                          <div className="flex-1">
+                             <FileUpload 
+                                onFilesSelected={(newFiles) => updatePlan(activePlan.id, { files: newFiles })}
+                                selectedFiles={activePlan.files} 
+                             />
+                          </div>
+                      </div>
+                    </div>
+                 </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-white px-8 py-6 border-t border-gray-200 flex justify-end items-center shrink-0 gap-4">
+                 <button 
+                    onClick={() => setIsUploadModalOpen(false)}
+                    className="px-6 py-3 font-bold text-gray-500 uppercase tracking-widest text-xs hover:text-black transition-colors"
+                 >
+                    Cancel
+                 </button>
+                 <button
+                    onClick={() => handleRunAudit(activePlan.id)}
+                    disabled={activePlan.files.length === 0}
+                    className={`px-10 py-4 font-bold text-[14px] uppercase tracking-widest transition-all focus:outline-none rounded-sm border-2 shadow-lg min-w-[200px] flex justify-center ${
+                      activePlan.files.length === 0
+                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-[#C5A059] border-[#C5A059] text-white hover:bg-[#A08040] hover:border-[#A08040] hover:shadow-xl'
+                    }`}
+                  >
+                    {activePlan.result ? "Update Model" : "Execute Engine"}
+                  </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default App;
