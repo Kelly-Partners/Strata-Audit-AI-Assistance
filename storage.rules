@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// 仅允许已登录用户读写自己目录：users/{userId}/...
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

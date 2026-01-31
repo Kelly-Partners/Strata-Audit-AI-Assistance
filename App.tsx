@@ -4,29 +4,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
-import { analyzeAuditFiles } from './services/geminiService';
-import { AuditResponse, Plan, PlanStatus, TriageItem } from './types';
+import { callExecuteFullReview } from './services/gemini';
+import { auth, db, storage, hasValidFirebaseConfig } from './services/firebase';
+import { uploadPlanFiles, savePlanToFirestore } from './services/planPersistence';
+import type { User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { Plan, PlanStatus, TriageItem } from './types';
 
 const App: React.FC = () => {
   // Global App State
-  const [apiKey, setApiKey] = useState('');
   const [plans, setPlans] = useState<Plan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
-  
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+
   // UI State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
+  // Login page state (参考 strata-tax-review-assistance 登录结构)
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setFirebaseUser(u));
+    return () => unsub();
+  }, []);
 
   // Derived Active Plan
   const activePlan = plans.find(p => p.id === activePlanId) || null;
-
-  // Auto-load API Key
-  useEffect(() => {
-    if (process.env.API_KEY) {
-      setApiKey(process.env.API_KEY);
-    }
-  }, []);
 
   // --- PLAN MANAGEMENT HELPERS ---
 
@@ -84,8 +92,8 @@ const App: React.FC = () => {
     const targetPlan = plans.find(p => p.id === planId);
     if (!targetPlan) return;
 
-    if (!apiKey) {
-      updatePlan(planId, { error: "Please provide a valid Gemini API Key in Settings." });
+    if (!firebaseUser) {
+      updatePlan(planId, { error: "请先登录后再执行审计。" });
       return;
     }
     if (targetPlan.files.length === 0) {
@@ -97,13 +105,34 @@ const App: React.FC = () => {
     updatePlan(planId, { status: 'processing', error: null });
     setIsUploadModalOpen(false); // Close modal if open
 
+    const userId = firebaseUser.uid;
+    const baseDoc = {
+      userId,
+      name: targetPlan.name,
+      createdAt: targetPlan.createdAt,
+    };
+    let filePaths: string[] = [];
+
     try {
-      // Async Execution (Concurrent)
-      // Note: We use the functional update inside the promise to ensure we reference the latest state if needed,
-      // but here we just need to overwrite the result.
-      const auditResult = await analyzeAuditFiles(apiKey, targetPlan.files, targetPlan.result);
-      
-      // Check if plan was cancelled (status changed to idle/failed) while processing
+      // 1) 上传文件到 Storage：users/{userId}/plans/{planId}/{fileName}
+      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+
+      // 2) 调用 Cloud Function 执行审计
+      const auditResult = await callExecuteFullReview({
+        files: targetPlan.files,
+        previousAudit: targetPlan.result ?? undefined,
+        expectedPlanId: planId,
+      });
+
+      // 3) 将 AI 结果与 filePaths 写入 Firestore
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: 'completed',
+        filePaths,
+        result: auditResult,
+        triage: targetPlan.triage,
+      });
+
       setPlans(currentPlans => {
          const currentPlan = currentPlans.find(p => p.id === planId);
          if (currentPlan && currentPlan.status === 'processing') {
@@ -111,13 +140,18 @@ const App: React.FC = () => {
          }
          return currentPlans;
       });
-
     } catch (err: any) {
+      const errMessage = err?.message || "Execution Failed";
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: 'failed',
+        ...(filePaths.length > 0 ? { filePaths } : {}),
+        error: errMessage,
+      });
       setPlans(currentPlans => {
          const currentPlan = currentPlans.find(p => p.id === planId);
-         // Only show error if not cancelled
          if (currentPlan && currentPlan.status !== 'idle') {
-             return currentPlans.map(p => p.id === planId ? { ...p, status: 'failed', error: err.message || "Execution Failed" } : p);
+             return currentPlans.map(p => p.id === planId ? { ...p, status: 'failed', error: errMessage } : p);
          }
          return currentPlans;
       });
@@ -178,6 +212,130 @@ const App: React.FC = () => {
 
   // Helper to get triage counts
   const getTriageCount = (severity: string) => activePlan?.triage.filter(t => t.severity === severity).length || 0;
+
+  // --- 登录门控：未登录时显示登录页（风格对齐 strata-tax-review-assistance） ---
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!loginEmail.trim() || !loginPassword) {
+      setAuthError(isSignUp ? '请输入邮箱与密码以注册' : '请输入邮箱与密码');
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
+      } else {
+        await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
+      }
+    } catch (err: any) {
+      setAuthError(err?.message || (isSignUp ? '注册失败' : '登录失败'));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError('');
+    setAuthLoading(true);
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (err: any) {
+      setAuthError(err?.message || 'Google 登录失败');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  if (!firebaseUser) {
+    return (
+      <div className="flex h-screen bg-[#111] text-white font-sans items-center justify-center p-4">
+        <div className="w-full max-w-[400px]">
+          {/* Brand：与侧栏一致 */}
+          <div className="flex items-center gap-3 justify-center mb-10">
+            <div className="h-10 w-10 bg-[#C5A059] flex items-center justify-center font-bold text-black rounded-sm shrink-0 text-lg">S</div>
+            <div className="text-left">
+              <h1 className="text-sm font-bold tracking-widest uppercase leading-none">Strata</h1>
+              <h1 className="text-sm font-bold tracking-widest uppercase text-[#C5A059] leading-none">Audit Engine</h1>
+            </div>
+          </div>
+
+          {!hasValidFirebaseConfig && (
+            <div className="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-sm text-amber-200 text-xs uppercase tracking-wide">
+              未检测到 Firebase 配置。请在项目根目录 .env 中填写 VITE_FIREBASE_* 后执行 npm run build 并重新部署。
+            </div>
+          )}
+
+          {/* Sign In 卡片 */}
+          <div className="bg-[#1a1a1a] border border-gray-800 rounded-sm p-8 shadow-xl">
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">Sign In</h2>
+
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Email</label>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => { setLoginEmail(e.target.value); setAuthError(''); }}
+                  placeholder="your@email.com"
+                  className="w-full px-4 py-3 bg-[#0d0d0d] border border-gray-700 rounded-sm text-sm text-white placeholder-gray-500 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Password</label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => { setLoginPassword(e.target.value); setAuthError(''); }}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-3 bg-[#0d0d0d] border border-gray-700 rounded-sm text-sm text-white placeholder-gray-500 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors"
+                />
+              </div>
+              {authError && (
+                <p className="text-[11px] text-red-400 font-medium">{authError}</p>
+              )}
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-[#C5A059] hover:bg-[#A08040] disabled:opacity-50 text-black font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-xs transition-colors"
+              >
+                {authLoading ? '…' : isSignUp ? 'Create Account' : 'Sign In'}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
+              className="mt-3 text-[11px] text-gray-500 hover:text-[#C5A059] transition-colors uppercase tracking-wide"
+            >
+              {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Create one'}
+            </button>
+
+            <div className="flex items-center gap-4 my-6">
+              <div className="flex-1 h-px bg-gray-800" />
+              <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">or</span>
+              <div className="flex-1 h-px bg-gray-800" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={authLoading}
+              className="w-full border border-gray-600 hover:border-[#C5A059] text-gray-300 hover:text-white font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Sign in with Google
+            </button>
+          </div>
+
+          <p className="mt-6 text-[10px] text-gray-600 text-center uppercase tracking-wide">
+            Enable Email/Password and Google in Firebase Console → Authentication before first use.
+            {!hasValidFirebaseConfig && ' 若页面空白，请确认部署前 .env 已配置 VITE_FIREBASE_* 并重新 build 后部署。'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-[#FAFAFA] text-[#111111] font-sans overflow-hidden relative">
@@ -341,9 +499,17 @@ const App: React.FC = () => {
            >
               <span>+</span> New Plan
            </button>
+           {firebaseUser ? (
+             <div className="mb-4 space-y-2">
+               <div className="text-[9px] text-gray-500 truncate" title={firebaseUser.email ?? undefined}>{firebaseUser.email ?? firebaseUser.uid}</div>
+               <button onClick={() => signOut(auth)} className="w-full border border-gray-700 hover:border-red-500 text-gray-400 hover:text-red-400 py-1.5 rounded-sm transition-colors text-[10px]">Sign Out</button>
+             </div>
+           ) : (
+             <button onClick={async () => { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { console.error('Sign in failed', e); } }} className="w-full mb-4 border border-[#C5A059] text-[#C5A059] hover:bg-[#C5A059] hover:text-black py-2 rounded-sm transition-colors text-[10px] font-bold">Sign in (Cloud Engine)</button>
+           )}
            <div className="flex justify-between">
               <span>Kernel v2.0</span>
-              <span className={apiKey ? "text-green-600" : "text-gray-600"}>{apiKey ? "API Ready" : "No Key"}</span>
+              <span className={firebaseUser ? "text-green-600" : "text-gray-600"}>{firebaseUser ? "Cloud Ready" : "请先登录"}</span>
            </div>
         </div>
       </aside>
@@ -539,25 +705,6 @@ const App: React.FC = () => {
                     {/* Left Column: Config */}
                     <div className="lg:col-span-4 space-y-6">
                        <div className="bg-white p-6 rounded border border-gray-200 shadow-sm">
-                          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">System Credentials</label>
-                          <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide mb-2">Gemini API Key</label>
-                                <input 
-                                    type="password" 
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                    placeholder="sk-..."
-                                    className="w-full px-4 py-3 border border-gray-300 rounded text-[14px] focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors font-mono bg-gray-50"
-                                />
-                            </div>
-                            <p className="text-[11px] text-gray-400 leading-relaxed border-l-2 border-[#C5A059] pl-3">
-                                Key is used for this session only.
-                            </p>
-                          </div>
-                       </div>
-                       
-                       <div className="bg-white p-6 rounded border border-gray-200 shadow-sm">
                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Plan Settings</label>
                            <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide mb-2">Plan Name</label>
                            <input 
@@ -604,14 +751,14 @@ const App: React.FC = () => {
                  </button>
                  <button
                     onClick={() => handleRunAudit(activePlan.id)}
-                    disabled={activePlan.files.length === 0}
+                    disabled={!firebaseUser || activePlan.files.length === 0}
                     className={`px-10 py-4 font-bold text-[14px] uppercase tracking-widest transition-all focus:outline-none rounded-sm border-2 shadow-lg min-w-[200px] flex justify-center ${
-                      activePlan.files.length === 0
+                      !firebaseUser || activePlan.files.length === 0
                         ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
                         : 'bg-[#C5A059] border-[#C5A059] text-white hover:bg-[#A08040] hover:border-[#A08040] hover:shadow-xl'
                     }`}
                   >
-                    {activePlan.result ? "Update Model" : "Execute Engine"}
+                    {!firebaseUser ? "请先登录" : activePlan.result ? "Update Model" : "Execute Engine"}
                   </button>
               </div>
            </div>
