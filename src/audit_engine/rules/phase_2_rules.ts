@@ -33,9 +33,8 @@ export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
   },
   levy_subtotal_b: {
     guidance:
-      "**(B) SUB-TOTAL (NET)** must be calculated as (B1) + Spec_Levy_Total + Plus_Interest_Chgd - Less_Discount_Given only. " +
-      "**Exclude** Legal Costs Recovery (Plus_Legal_Recovery) and Other Recovery (Plus_Other_Recovery) from the (B) calculation. " +
-      "Those two lines remain in the table for disclosure; fill their amounts and notes from evidence as usual, but do not add them into Sub_Admin_Net, Sub_Sink_Net, or Total_Levies_Net.",
+      "**(B) SUB-TOTAL (NET)** – use explicit formulas only (do not sum 'all lines above'): Sub_Admin_Net = Sub_Levies_Standard_Admin + Spec_Levy_Admin + Plus_Interest_Chgd - Less_Discount_Given ONLY; Sub_Sink_Net = Sub_Levies_Standard_Sink + Spec_Levy_Sink ONLY; Total_Levies_Net = Sub_Admin_Net + Sub_Sink_Net. " +
+      "Do not add Plus_Legal_Recovery or Plus_Other_Recovery into (B). **Do not extract** Plus_Legal_Recovery or Plus_Other_Recovery from evidence; output amount 0 and note N/A for both. For (A), (B1), (C), (D), (E), (=), Levy_Variance use the formulas in MODULE 50_OUTPUTS.",
   },
 };
 

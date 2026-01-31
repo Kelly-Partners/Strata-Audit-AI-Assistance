@@ -500,10 +500,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
   const defaultSummary = { total_files: 0, missing_critical_types: [], status: 'N/A' };
   const summary = { ...defaultSummary, ...(safeData.intake_summary || {}) };
 
-  // Helper to attach actions
+  // Helper to attach actions (native title tooltip when content is string, e.g. Note column)
   const withAction = (rowId: string, title: string, content: React.ReactNode) => (
      <div className="relative group pr-8 h-full flex items-center">
-        <div className="flex-1">{content}</div>
+        <div className="flex-1" title={typeof content === 'string' ? content : undefined}>{content}</div>
         <RowAction 
            rowId={`${activeTab}-${rowId}`} 
            tab={activeTab} 
@@ -632,22 +632,22 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                   <div className="text-[14px]">AGM Date: <span className="font-bold text-[15px]">{data.levy_reconciliation.master_table.AGM_Date}</span></div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full table-fixed text-right border-collapse border border-gray-200">
+              <div className="overflow-x-auto w-full">
+                <table className="w-full table-fixed text-right border-collapse border border-gray-200 [&_td:nth-child(5)]:truncate [&_td:nth-child(1)]:sticky [&_td:nth-child(1)]:left-0 [&_td:nth-child(1)]:z-10 [&_td:nth-child(1)]:bg-white [&_td:nth-child(5)]:sticky [&_td:nth-child(5)]:right-0 [&_td:nth-child(5)]:z-10 [&_td:nth-child(5)]:bg-white">
                   <colgroup>
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "25%" }} />
+                    <col style={{ width: "16.67%" }} />
+                    <col style={{ width: "16.67%" }} />
+                    <col style={{ width: "16.67%" }} />
+                    <col style={{ width: "25%", maxWidth: "25%" }} />
                   </colgroup>
                   <thead className="bg-gray-100 text-black uppercase font-bold text-[15px] tracking-wider">
                     <tr>
-                      <th className="px-5 py-4 text-left border-b border-gray-200">Item</th>
+                      <th className="px-5 py-4 text-left border-b border-gray-200 sticky left-0 z-10 bg-gray-100">Item</th>
                       <th className="px-5 py-4 border-b border-gray-200">Admin Fund ($)</th>
                       <th className="px-5 py-4 border-b border-gray-200">Sinking Fund ($)</th>
                       <th className="px-5 py-4 border-b border-gray-200">Total ($)</th>
-                      <th className="px-5 py-4 text-left border-b border-gray-200 pl-4 pr-3">Note / Source</th>
+                      <th className="px-5 py-4 text-left border-b border-gray-200 pl-4 pr-3 sticky right-0 z-10 bg-gray-100">Note / Source</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-[15px]">
