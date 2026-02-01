@@ -34,6 +34,8 @@ export const IntakeSummarySchema = z.object({
   total_files: z.number(),
   missing_critical_types: z.array(z.string()),
   status: z.string(),
+  strata_plan: z.string().optional(),
+  financial_year: z.string().optional(),
 });
 
 export const LevyRecMasterSchema = z.object({
@@ -112,29 +114,23 @@ const ExpenseSampleSchema = z.object({
   verification_steps: z.array(VerificationStepSchema).optional(),
 });
 
-const BankReconciliationSchema = z.object({
-  Source_Doc_ID: z.string(),
-  Bank_Stmt_Balance: TraceableValueSchema,
-  Bank_Stmt_Date: z.string(),
-  Outstanding_Deposits: TraceableValueSchema,
-  Unpresented_Cheques: TraceableValueSchema,
-  Adjusted_Bank_Bal: TraceableValueSchema,
-  GL_Bank_Balance: TraceableValueSchema,
-  Bank_Rec_Variance: TraceableValueSchema,
-});
-
-const FundIntegritySchema = z.object({
-  Source_Doc_ID: z.string(),
-  Admin_Fund_Bal: TraceableValueSchema,
-  Admin_Solvency_Status: z.string(),
-  Admin_Action: z.string(),
-  Cap_Works_Bal: TraceableValueSchema,
-  Cap_Integrity_Status: z.string(),
-  Cap_Action: z.string(),
-  TFN_Check_Source_ID: z.string(),
-  TFN_Tax_Amt: TraceableValueSchema,
-  TFN_Status: z.string(),
-  TFN_Action: z.string(),
+const BalanceSheetVerificationItemSchema = z.object({
+  line_item: z.string(),
+  section: z.enum(["OWNERS_EQUITY", "ASSETS", "LIABILITIES"]).optional(),
+  fund: z.string().optional(),
+  bs_amount: z.number(),
+  supporting_amount: z.number(),
+  evidence_ref: z.string(),
+  status: z.enum([
+    "VERIFIED",
+    "VARIANCE",
+    "MISSING_BANK_STMT",
+    "TIER_3_ONLY",
+    "MISSING_LEVY_REPORT",
+    "MISSING_BREAKDOWN",
+    "NO_SUPPORT",
+  ]),
+  note: z.string().optional(),
 });
 
 const GSTRecMasterSchema = z.object({
@@ -207,9 +203,7 @@ export const AuditResponseSchema = z.object({
   levy_reconciliation: LevyRecSchema.optional(),
   assets_and_cash: z
     .object({
-      bank_reconciliation: BankReconciliationSchema,
-      fund_integrity: FundIntegritySchema,
-      investments: z.array(z.unknown()),
+      balance_sheet_verification: z.array(BalanceSheetVerificationItemSchema),
     })
     .optional(),
   expense_samples: z.array(ExpenseSampleSchema).optional(),

@@ -5,6 +5,7 @@ export {
   uploadPlanFiles,
   savePlanToFirestore,
   getPlansFromFirestore,
+  loadPlanFilesFromStorage,
   deletePlanFilesFromStorage,
   deletePlanFromFirestore,
   type PlanDoc,

@@ -39,4 +39,9 @@ Objective: Establish the single source of truth.
    - Minimum: one row per Type (11 types = at least 11 rows). More rows when multiple files exist for a Type.
 
 4. If AGM Minutes or General Ledger has no file (empty row), FLAG as MISSING CRITICAL RECORD in intake_summary.
+
+5. GLOBAL SETTING – SP & FY (content recognition from minutes & financials):
+   - Extract **Strata Plan number** (e.g. SP 12345, Strata Plan 12345) from AGM Minutes, Committee Minutes, or Financial Statement. Populate intake_summary.strata_plan.
+   - Extract **Financial Year** (FY) from the same documents. Anchor search in the section after "Audit Execution Report" and near the strata plan name. Format as DD/MM/YYYY - DD/MM/YYYY (e.g. 01/07/2024 - 30/06/2025) or DD/MM/YYYY for FY end. Populate intake_summary.financial_year.
+   - This FY becomes the **global audit period** for all phases (Revenue, Assets, Expense, Compliance). Phases will use intake_summary.financial_year for time-based logic.
 `;

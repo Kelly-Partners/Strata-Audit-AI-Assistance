@@ -6,7 +6,7 @@ import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
 import { callExecuteFullReview } from './services/gemini';
 import { auth, db, storage, hasValidFirebaseConfig } from './services/firebase';
-import { uploadPlanFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore } from './services/planPersistence';
+import { uploadPlanFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore, getPlansFromFirestore, loadPlanFilesFromStorage } from './services/planPersistence';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { Plan, PlanStatus, TriageItem } from './types';
@@ -33,8 +33,52 @@ const App: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Derived Active Plan
+  // Load plans from Firestore when user logs in (persistence across refresh)
+  useEffect(() => {
+    if (!firebaseUser || !hasValidFirebaseConfig) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const firestorePlans = await getPlansFromFirestore(db, firebaseUser.uid);
+        if (cancelled) return;
+        const mapped: Plan[] = firestorePlans.map((p) => ({
+          id: p.id,
+          name: p.name,
+          createdAt: p.createdAt,
+          status: (p.status as PlanStatus) || 'idle',
+          files: [],
+          filePaths: p.filePaths,
+          result: p.result ?? null,
+          triage: p.triage ?? [],
+          error: p.error ?? null,
+        }));
+        setPlans(mapped);
+      } catch (err) {
+        if (!cancelled) console.warn('Failed to load plans from Firestore:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [firebaseUser?.uid, hasValidFirebaseConfig]);
+
+  // Derived Active Plan（必须在引用它的 useEffect 之前声明，避免 TDZ 错误）
   const activePlan = plans.find(p => p.id === activePlanId) || null;
+
+  // Load files from Storage when user selects a plan that has filePaths but no local files (e.g. after refresh)
+  useEffect(() => {
+    if (!firebaseUser || !activePlan?.filePaths?.length || activePlan.files.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const loaded = await loadPlanFilesFromStorage(storage, activePlan.filePaths!);
+        if (!cancelled && loaded.length > 0) {
+          updatePlan(activePlan.id, { files: loaded });
+        }
+      } catch (_) {
+        // Ignore load errors
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [firebaseUser?.uid, activePlanId, activePlan?.id, activePlan?.filePaths?.length, activePlan?.files.length]);
 
   // --- PLAN MANAGEMENT HELPERS ---
 

@@ -18,6 +18,10 @@ export interface IntakeSummary {
   total_files: number;
   missing_critical_types: string[];
   status: string;
+  /** Strata Plan number (e.g. SP 12345) – extracted from minutes/financials during document dictionary recognition */
+  strata_plan?: string;
+  /** Financial Year – extracted from minutes/financials (format DD/MM/YYYY - DD/MM/YYYY or DD/MM/YYYY); used as global FY for all phases */
+  financial_year?: string;
 }
 
 export interface TraceableValue {
@@ -83,46 +87,23 @@ export interface LevyReconciliation {
   high_risk_debtors: HighRiskDebtor[];
 }
 
-export interface BankReconciliation {
-  Source_Doc_ID: string;
-  Bank_Stmt_Balance: TraceableValue;
-  Bank_Stmt_Date: string;
-  Outstanding_Deposits: TraceableValue;
-  Unpresented_Cheques: TraceableValue;
-  Adjusted_Bank_Bal: TraceableValue;
-  GL_Bank_Balance: TraceableValue;
-  Bank_Rec_Variance: TraceableValue;
-}
-
-export interface FundIntegrity {
-  Source_Doc_ID: string;
-  Admin_Fund_Bal: TraceableValue;
-  Admin_Solvency_Status: string;
-  Admin_Action: string;
-  Cap_Works_Bal: TraceableValue;
-  Cap_Integrity_Status: string;
-  Cap_Action: string;
-  TFN_Check_Source_ID: string;
-  TFN_Tax_Amt: TraceableValue;
-  TFN_Status: string;
-  TFN_Action: string;
-}
-
-export interface Investment {
-  Source_Doc_ID: string;
-  TD_Bank_Name: string;
-  TD_Principal: TraceableValue;
-  TD_Rate: number;
-  TD_Maturity: string;
-  Calc_Interest: TraceableValue;
-  GL_Interest: TraceableValue;
-  Interest_Variance: TraceableValue;
+/** Phase 4 GATE 2: Full Balance Sheet line-item verification (Owners Equity, Assets, Liabilities) */
+export interface BalanceSheetVerificationItem {
+  line_item: string;
+  section?: "OWNERS_EQUITY" | "ASSETS" | "LIABILITIES";
+  fund?: string;
+  bs_amount: number;
+  supporting_amount: number;
+  /** Doc_ID/Page for traceability (e.g. "Sys_001/Page 2") */
+  evidence_ref: string;
+  status: "VERIFIED" | "VARIANCE" | "MISSING_BANK_STMT" | "TIER_3_ONLY" | "MISSING_LEVY_REPORT" | "MISSING_BREAKDOWN" | "NO_SUPPORT";
+  /** AI explanation holder (same as Table E.Master Note/Source) – human-readable source context e.g. "Bank Statement p.2 as at FY end", "Current Year BS column" */
+  note?: string;
 }
 
 export interface AssetsAndCash {
-  bank_reconciliation: BankReconciliation;
-  fund_integrity: FundIntegrity;
-  investments: Investment[];
+  /** Phase 4: Full Balance Sheet verification (Owners Equity + Assets + Liabilities) */
+  balance_sheet_verification: BalanceSheetVerificationItem[];
 }
 
 export interface VerificationStep {
@@ -236,6 +217,8 @@ export interface Plan {
   createdAt: number;
   status: PlanStatus;
   files: File[];
+  /** Storage paths for files (used when loading from Firestore to restore PDF preview) */
+  filePaths?: string[];
   result: AuditResponse | null;
   triage: TriageItem[];
   error: string | null;

@@ -4,7 +4,7 @@
  * Firestore 文档：plans/{planId}，含 userId、name、createdAt、status、filePaths、result、triage、error
  */
 
-import { ref, uploadBytes, listAll, deleteObject } from "firebase/storage";
+import { ref, uploadBytes, listAll, deleteObject, getDownloadURL } from "firebase/storage";
 import type { FirebaseStorage } from "firebase/storage";
 import {
   doc,
@@ -91,6 +91,30 @@ export async function getPlansFromFirestore(
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PlanDoc & { id: string }));
+}
+
+/**
+ * 从 Storage 按 filePaths 下载文件，用于刷新后恢复 PDF 预览。
+ */
+export async function loadPlanFilesFromStorage(
+  storageInstance: FirebaseStorage,
+  filePaths: string[]
+): Promise<File[]> {
+  if (!filePaths?.length) return [];
+  const files: File[] = [];
+  for (const path of filePaths) {
+    try {
+      const storageRef = ref(storageInstance, path);
+      const url = await getDownloadURL(storageRef);
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const fileName = path.split("/").pop() || "file";
+      files.push(new File([blob], fileName, { type: blob.type || "application/octet-stream" }));
+    } catch (_) {
+      // Skip failed fetches
+    }
+  }
+  return files;
 }
 
 /**

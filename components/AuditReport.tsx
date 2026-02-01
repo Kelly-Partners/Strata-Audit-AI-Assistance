@@ -3,6 +3,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AuditResponse, TraceableValue, DocumentEntry, VerificationStep, TriageItem } from '../types';
 
+/** Extract 1-based page number from various ref formats: "Page 3", "p.3", "pg 3", "3" */
+function extractPageNumber(s: string): string | null {
+  if (!s || !s.trim()) return null;
+  const m = s.match(/Page\s*(\d+)/i) || s.match(/p\.?\s*(\d+)/i) || s.match(/pg\.?\s*(\d+)/i)
+    || s.match(/^(?:p\.?|pg\.?)?\s*(\d+)$/i) || s.match(/\b(\d+)\s*$/);
+  return m ? m[1] : null;
+}
+
 interface AuditReportProps {
   data: AuditResponse;
   files: File[];
@@ -106,8 +114,8 @@ const ForensicCell: React.FC<{
     }
     
     const objectUrl = URL.createObjectURL(targetFile);
-    const pageMatch = val.page_ref?.match(/Page\s*(\d+)/i);
-    const pageNum = pageMatch ? pageMatch[1] : null;
+    // Extract page number from multiple formats: "Page 3", "p.3", "pg 3", "3", "p3"
+    const pageNum = extractPageNumber(val.page_ref || val.note || "");
     const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
     
     setPdfUrl(finalUrl);
@@ -470,11 +478,11 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ status, onClick }) => {
   const s = (status || '').toLowerCase();
   let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
-  if (s.includes('fail') || s.includes('risk') || s.includes('unauthorised') || s.includes('wrong') || s.includes('insolvent') || s.includes('deficit')) {
+  if (s.includes('fail') || s.includes('risk') || s.includes('unauthorised') || s.includes('wrong') || s.includes('insolvent') || s.includes('deficit') || s.includes('variance')) {
     colorClass = 'bg-red-50 text-red-800 border-red-100';
-  } else if (s.includes('pass') || s.includes('ok') || s.includes('resolved') || s.includes('solvent')) {
+  } else if (s.includes('pass') || s.includes('ok') || s.includes('resolved') || s.includes('solvent') || s.includes('verified')) {
     colorClass = 'bg-green-50 text-green-800 border-green-100';
-  } else if (s.includes('missing') || s.includes('required')) {
+  } else if (s.includes('missing') || s.includes('required') || s.includes('tier_3') || s.includes('no_support') || s.includes('breakdown')) {
     colorClass = 'bg-yellow-50 text-yellow-800 border-yellow-100';
   }
 
@@ -497,7 +505,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
   const safeData: Partial<AuditResponse> = data || {};
   const docs = safeData.document_register || [];
   
-  const defaultSummary = { total_files: 0, missing_critical_types: [], status: 'N/A' };
+  const defaultSummary = { total_files: 0, missing_critical_types: [], status: 'N/A', strata_plan: undefined as string | undefined, financial_year: undefined as string | undefined };
   const summary = { ...defaultSummary, ...(safeData.intake_summary || {}) };
 
   // Helper to attach actions (native title tooltip when content is string, e.g. Note column)
@@ -525,7 +533,17 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
       )}
 
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-8 pt-6 rounded-t">
-        <h2 className="text-2xl font-bold text-black mb-6 tracking-tight">Audit Execution Report</h2>
+        <h2 className="text-2xl font-bold text-black mb-4 tracking-tight">Audit Execution Report</h2>
+        <div className="mb-4 py-3 px-4 rounded bg-[#C5A059]/10 border border-[#C5A059]/30 flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-[#C5A059] uppercase tracking-widest">Strata Plan</span>
+            <span className="text-[15px] font-bold text-black font-mono">{summary.strata_plan || '–'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-[#C5A059] uppercase tracking-widest">FY (Global)</span>
+            <span className="text-[15px] font-bold text-black font-mono">{summary.financial_year || '–'}</span>
+          </div>
+        </div>
         <div className="flex space-x-1 overflow-x-auto">
           <TabButton active={activeTab === 'docs'} onClick={() => setActiveTab('docs')}>
             Register
@@ -557,7 +575,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                 <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Step 0: Document Dictionary</h3>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                 <div className="p-4 bg-gray-50 border border-gray-100">
                   <div className="text-[14px] text-[#C5A059] uppercase font-bold tracking-widest mb-2">Total Files</div>
                   <div className="text-[18px] font-bold text-black">{summary.total_files}</div>
@@ -566,14 +584,22 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                   <div className="text-[14px] text-gray-500 uppercase font-bold tracking-widest mb-2">Status</div>
                   <div className="text-[18px] font-bold text-black">{summary.status}</div>
                 </div>
-                {summary.missing_critical_types && summary.missing_critical_types.length > 0 && (
-                   <div className="p-4 bg-red-50 border border-red-100">
+                <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
+                  <div className="text-[14px] text-[#C5A059] uppercase font-bold tracking-widest mb-2">Strata Plan</div>
+                  <div className="text-[18px] font-bold text-black font-mono">{summary.strata_plan || '–'}</div>
+                </div>
+                <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
+                  <div className="text-[14px] text-[#C5A059] uppercase font-bold tracking-widest mb-2">FY (Global)</div>
+                  <div className="text-[18px] font-bold text-black font-mono">{summary.financial_year || '–'}</div>
+                </div>
+                {summary.missing_critical_types && summary.missing_critical_types.length > 0 ? (
+                   <div className="p-4 bg-red-50 border border-red-100 lg:col-span-1">
                    <div className="text-[14px] text-red-700 uppercase font-bold tracking-widest mb-2">Missing Records</div>
                    <div className="text-[15px] font-medium text-red-900">
                      {summary.missing_critical_types.join(', ')}
                    </div>
                  </div>
-                )}
+                ) : null}
               </div>
               
               <div className="overflow-x-auto">
@@ -946,108 +972,93 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
           </div>
         )}
 
-        {/* ASSETS */}
-        {activeTab === 'assets' && data.assets_and_cash && (
+        {/* ASSETS – Full Balance Sheet Verification only (Table C.3) */}
+        {activeTab === 'assets' && (
             <div className="space-y-8">
+                {/* Table C.3: Full Balance Sheet Verification (Phase 4 GATE 2) – font/size/forensic aligned with Table E.Master */}
                 <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
                     <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Table C.1: Independent Bank Reconciliation</h3>
+                        <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Table C.3: Full Balance Sheet Verification (Phase 4 GATE 2)</h3>
+                        <p className="text-xs text-gray-500 mt-1 uppercase tracking-wide">Owners Equity, Assets, Liabilities – line-by-line verification per ASSET_VERIFICATION_RULES. Current Year column only.</p>
                     </div>
-                     <div className="overflow-x-auto">
-                        <table className="min-w-full text-left">
-                            <thead className="bg-gray-100 text-black uppercase font-bold text-[15px] tracking-wider">
-                                <tr>
-                                     <th className="px-5 py-4 border-b border-gray-200">Reconciliation Item</th>
-                                     <th className="px-5 py-4 text-right border-b border-gray-200">Amount ($)</th>
-                                     <th className="px-5 py-4 text-left border-b border-gray-200 pl-8">Note / Source</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 text-[15px]">
-                                <tr className="group hover:bg-gray-50">
-                                    <td className="px-5 py-4 text-gray-700">Balance per Bank Stmt</td>
-                                    <td className="px-5 py-4 font-medium text-right"><ForensicCell val={data.assets_and_cash.bank_reconciliation.Bank_Stmt_Balance} docs={docs} files={files} /></td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('bank_stmt', 'Bank Stmt Bal', data.assets_and_cash.bank_reconciliation.Bank_Stmt_Balance.note || '-')}
-                                    </td>
-                                </tr>
-                                <tr className="group hover:bg-gray-50">
-                                    <td className="px-5 py-4 text-gray-500 pl-8">(+) Outstanding Deposits</td>
-                                    <td className="px-5 py-4 text-gray-500 text-right"><ForensicCell val={data.assets_and_cash.bank_reconciliation.Outstanding_Deposits} docs={docs} files={files} /></td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('out_dep', 'Outstanding Deposits', data.assets_and_cash.bank_reconciliation.Outstanding_Deposits.note || '-')}
-                                    </td>
-                                </tr>
-                                <tr className="group hover:bg-gray-50">
-                                    <td className="px-5 py-4 text-gray-500 pl-8">(-) Unpresented Cheques</td>
-                                    <td className="px-5 py-4 text-gray-500 text-right">(<ForensicCell val={data.assets_and_cash.bank_reconciliation.Unpresented_Cheques} docs={docs} files={files} />)</td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('unp_chq', 'Unpresented Cheques', data.assets_and_cash.bank_reconciliation.Unpresented_Cheques.note || '-')}
-                                    </td>
-                                </tr>
-                                <tr className="bg-gray-50 font-bold border-y border-gray-200 group hover:bg-gray-100">
-                                    <td className="px-5 py-4 text-black">(=) Adjusted Bank Balance</td>
-                                    <td className="px-5 py-4 text-right"><ForensicCell val={data.assets_and_cash.bank_reconciliation.Adjusted_Bank_Bal} docs={docs} files={files} /></td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('adj_bal', 'Adjusted Balance', data.assets_and_cash.bank_reconciliation.Adjusted_Bank_Bal.note || '-')}
-                                    </td>
-                                </tr>
-                                <tr className="group hover:bg-gray-50">
-                                    <td className="px-5 py-4 text-gray-700">Per General Ledger</td>
-                                    <td className="px-5 py-4 text-right"><ForensicCell val={data.assets_and_cash.bank_reconciliation.GL_Bank_Balance} docs={docs} files={files} /></td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('gl_bal', 'GL Balance', data.assets_and_cash.bank_reconciliation.GL_Bank_Balance.note || '-')}
-                                    </td>
-                                </tr>
-                                <tr className="border-t-4 border-double border-black group hover:bg-gray-50">
-                                    <td className="px-5 py-4 font-bold text-black">Rec Variance</td>
-                                    <td className="px-5 py-4 text-right font-bold">
-                                        <ForensicCell val={data.assets_and_cash.bank_reconciliation.Bank_Rec_Variance} docs={docs} textColor={data.assets_and_cash.bank_reconciliation.Bank_Rec_Variance.amount !== 0 ? 'text-red-700' : 'text-green-700'} files={files} />
-                                    </td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('bank_var', 'Bank Variance', data.assets_and_cash.bank_reconciliation.Bank_Rec_Variance.note || 'Must be 0')}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                     </div>
-                </div>
-                <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Table C.2: Fund Integrity & Compliance</h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full border border-gray-200">
-                            <thead className="bg-gray-100 text-black font-bold uppercase text-[15px] tracking-wider">
-                                <tr>
-                                    <th className="px-5 py-4 text-left border-b border-gray-200">Risk Test</th>
-                                    <th className="px-5 py-4 text-right border-b border-gray-200">Result ($)</th>
-                                    <th className="px-5 py-4 text-center border-b border-gray-200">Status</th>
-                                    <th className="px-5 py-4 text-left border-b border-gray-200">Action Required</th>
-                                    <th className="px-5 py-4 text-left border-b border-gray-200 pl-8">Note / Source</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 text-[15px]">
-                                <tr className="group hover:bg-gray-50">
-                                    <td className="px-5 py-4 font-bold text-gray-700">Admin Fund Solvency</td>
-                                    <td className="px-5 py-4 text-right"><ForensicCell val={data.assets_and_cash.fund_integrity.Admin_Fund_Bal} docs={docs} files={files} /></td>
-                                    <td className="px-5 py-4 text-center"><StatusBadge status={data.assets_and_cash.fund_integrity.Admin_Solvency_Status} /></td>
-                                    <td className="px-5 py-4 text-[14px] text-gray-600">{data.assets_and_cash.fund_integrity.Admin_Action}</td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('admin_sol', 'Admin Solvency', data.assets_and_cash.fund_integrity.Admin_Fund_Bal.note || '-')}
-                                    </td>
-                                </tr>
-                                <tr className="group hover:bg-gray-50">
-                                    <td className="px-5 py-4 font-bold text-gray-700">TFN Tax Withheld</td>
-                                    <td className="px-5 py-4 text-right"><ForensicCell val={data.assets_and_cash.fund_integrity.TFN_Tax_Amt} docs={docs} files={files} /></td>
-                                    <td className="px-5 py-4 text-center"><StatusBadge status={data.assets_and_cash.fund_integrity.TFN_Status} /></td>
-                                    <td className="px-5 py-4 text-[14px] text-gray-600">{data.assets_and_cash.fund_integrity.TFN_Action}</td>
-                                    <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-[13px]">
-                                       {withAction('tfn_tax', 'TFN Tax', data.assets_and_cash.fund_integrity.TFN_Tax_Amt.note || '-')}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                    {data?.assets_and_cash?.balance_sheet_verification && data.assets_and_cash.balance_sheet_verification.length > 0 ? (
+                        <div className="overflow-x-auto w-full">
+                            <table className="w-full table-fixed border-collapse border border-gray-200 text-right [&_td:nth-child(6)]:truncate [&_td:nth-child(1)]:sticky [&_td:nth-child(1)]:left-0 [&_td:nth-child(1)]:z-10 [&_td:nth-child(1)]:bg-white [&_td:nth-child(6)]:sticky [&_td:nth-child(6)]:right-0 [&_td:nth-child(6)]:z-10 [&_td:nth-child(6)]:bg-white">
+                                <colgroup>
+                                    <col style={{ width: "28%" }} />
+                                    <col style={{ width: "12%" }} />
+                                    <col style={{ width: "16%" }} />
+                                    <col style={{ width: "16%" }} />
+                                    <col style={{ width: "12%" }} />
+                                    <col style={{ width: "16%", maxWidth: "25%" }} />
+                                </colgroup>
+                                <thead className="bg-gray-100 text-black uppercase font-bold text-[15px] tracking-wider">
+                                    <tr>
+                                        <th className="px-5 py-4 text-left border-b border-gray-200 sticky left-0 z-10 bg-gray-100">Line Item</th>
+                                        <th className="px-5 py-4 text-left border-b border-gray-200">Fund</th>
+                                        <th className="px-5 py-4 text-right border-b border-gray-200">BS Amount ($)</th>
+                                        <th className="px-5 py-4 text-right border-b border-gray-200">Supporting ($)</th>
+                                        <th className="px-5 py-4 text-center border-b border-gray-200">Status</th>
+                                        <th className="px-5 py-4 text-left border-b border-gray-200 pl-4 pr-3 sticky right-0 z-10 bg-gray-100">Note / Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 text-[15px]">
+                                    {(() => {
+                                        const items = data.assets_and_cash.balance_sheet_verification;
+                                        const SECTION_ORDER: Array<'OWNERS_EQUITY' | 'ASSETS' | 'LIABILITIES'> = ['OWNERS_EQUITY', 'ASSETS', 'LIABILITIES'];
+                                        const SECTION_LABELS: Record<string, string> = { OWNERS_EQUITY: 'Owners Equity', ASSETS: 'Assets', LIABILITIES: 'Liabilities', Other: 'Other' };
+                                        const groups: Array<{ section: string; items: typeof items }> = [];
+                                        SECTION_ORDER.forEach((s) => {
+                                            const g = items.filter((i) => (i.section || 'ASSETS') === s);
+                                            if (g.length > 0) groups.push({ section: s, items: g });
+                                        });
+                                        const uncategorized = items.filter((i) => !SECTION_ORDER.includes((i.section || 'ASSETS') as 'OWNERS_EQUITY' | 'ASSETS' | 'LIABILITIES'));
+                                        if (uncategorized.length > 0) groups.push({ section: 'Other', items: uncategorized });
+                                        const rows: React.ReactNode[] = [];
+                                        let globalIdx = 0;
+                                        groups.forEach(({ section, items: group }) => {
+                                            const label = SECTION_LABELS[section] || section;
+                                            rows.push(
+                                                <tr key={`h-${section}`} className="bg-gray-50/50">
+                                                    <td colSpan={6} className="px-5 py-3 text-left font-bold text-gray-800 uppercase text-[14px] tracking-wide">{label}</td>
+                                                </tr>
+                                            );
+                                            group.forEach((item) => {
+                                                const idx = globalIdx++;
+                                                const evRef = item.evidence_ref || '';
+                                                const evParts = evRef.split(/[/,]/);
+                                                const srcId = evParts[0]?.trim() || '-';
+                                                const pageRef = evParts[1]?.trim() || evRef;
+                                                const bsTrace: TraceableValue = { amount: item.bs_amount ?? 0, source_doc_id: srcId, page_ref: pageRef, note: item.note || '' };
+                                                const supTrace: TraceableValue = { amount: item.supporting_amount ?? 0, source_doc_id: srcId, page_ref: pageRef, note: item.note || '' };
+                                                const noteContent = item.note || item.evidence_ref || '–';
+                                                rows.push(
+                                                    <tr key={idx} className="group hover:bg-gray-50">
+                                                        <td className="px-5 py-3 text-left pl-8 text-gray-600 font-medium sticky left-0 z-10 bg-white group-hover:bg-gray-50">{item.line_item}</td>
+                                                        <td className="px-5 py-3 text-left text-gray-600">{item.fund || '–'}</td>
+                                                        <td className="px-5 py-3"><ForensicCell val={bsTrace} docs={docs} files={files} /></td>
+                                                        <td className="px-5 py-3"><ForensicCell val={supTrace} docs={docs} files={files} /></td>
+                                                        <td className="px-5 py-3 text-center"><StatusBadge status={item.status} /></td>
+                                                        <td className="px-5 py-3 text-left pl-4 pr-3 text-gray-400 italic text-[13px] sticky right-0 z-10 bg-white group-hover:bg-gray-50">
+                                                            {withAction(`bs_${idx}_${(item.line_item || '').replace(/\s+/g, '_')}`, item.line_item || 'Line', noteContent)}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            });
+                                        });
+                                        return rows;
+                                    })()}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="py-12 text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
+                            <p className="text-gray-600 font-medium mb-2">No balance sheet verification data</p>
+                            <p className="text-sm text-gray-500 max-w-md mx-auto">
+                                Create a <strong>new plan</strong>, upload evidence (including Financial Statement), and run a <strong>fresh audit</strong> to populate full Balance Sheet verification (Owners Equity, Assets, Liabilities) with Current Year figures.
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
         )}

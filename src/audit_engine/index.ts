@@ -6,7 +6,7 @@
 import { HIERARCHY_INTRO, HIERARCHY_AFTER_EVIDENCE } from "./kernel/00_constitution";
 import { EVIDENCE_RULES_PROMPT } from "./kernel/20_evidence_rules";
 import { STEP_0_INTAKE_PROMPT } from "./workflow/step_0_intake";
-import { PHASE_1_RULES_PROMPT, PHASE_2_RULES_PROMPT } from "./rules";
+import { PHASE_1_RULES_PROMPT, PHASE_2_RULES_PROMPT, PHASE_4_RULES_PROMPT } from "./rules";
 import { PHASE_1_VERIFY_PROMPT } from "./workflow/phase_1_verify";
 import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
 import { PHASE_3_EXPENSES_PROMPT } from "./workflow/phase_3_expenses";
@@ -29,6 +29,7 @@ export function buildSystemPrompt(): string {
     PHASE_2_REVENUE_PROMPT +
     PHASE_2_RULES_PROMPT +
     PHASE_4_ASSETS_PROMPT +
+    PHASE_4_RULES_PROMPT +
     PHASE_3_EXPENSES_PROMPT +
     PHASE_5_COMPLIANCE_PROMPT +
     MODULE_50_OUTPUTS_PROMPT
