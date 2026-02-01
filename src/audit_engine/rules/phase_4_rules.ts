@@ -9,6 +9,15 @@ export const ASSET_VERIFICATION_RULES_PROMPT = `
    [GATE 2 LOGIC - FULL BALANCE SHEET: Owners Equity, Assets, Liabilities] – MANDATORY ENFORCEMENT
    [AUDIT PERIOD: Use CURRENT YEAR column for all amounts. Prior Year column ONLY for RULE 1 roll-forward. See Phase 4 workflow for FY anchor.]
 
+   --- FOUNDATIONAL RULE – bs_amount & line_item SOURCE (DO NOT VIOLATE) ---
+   **bs_amount and line_item** MUST be extracted SOLELY from the **Balance Sheet (Financial Statement)**. Do NOT use General Ledger, Trial Balance, Levy Position Report, Levy Summary, Cash Summary, Owner Ledger, Fund Ledger, or any other document to populate bs_amount or line_item.
+   - The Balance Sheet is the SOLE source for "what" appears in balance_sheet_verification. Copy line_item names and amounts EXACTLY as they appear on the Balance Sheet (Current Year column).
+   - **supporting_amount** is the verification evidence – from Bank Statement (R2), Levy Report (R3), breakdown report (R4), or GL (R5) per rules. supporting_amount is used to VERIFY bs_amount; it is NOT the source of bs_amount.
+   - PROHIBITED: Filling bs_amount from GL, ledger, or summary. If the Balance Sheet is missing or unreadable, mark accordingly; do NOT substitute with ledger figures.
+
+   --- COMPLETENESS RULE – ALL BALANCE SHEET ITEMS (MANDATORY) ---
+   balance_sheet_verification MUST include **every line item** that appears on the Financial Statement Balance Sheet – Owners Equity, Assets, Liabilities. Scan the Balance Sheet page-by-page. Do NOT omit any row. Every Balance Sheet data row = one row in balance_sheet_verification. If a line appears on the BS, it MUST appear in the output.
+
    RULE 1: OWNERS EQUITY – ROLL-FORWARD CHECK
    - Target: "Owners Funds at Start of Year" (Admin & Capital).
    - Action: Check if this equals the "Closing Balance" of the PREVIOUS YEAR column on the Balance Sheet itself.

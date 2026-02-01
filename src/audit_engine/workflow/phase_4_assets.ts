@@ -7,6 +7,10 @@ export const PHASE_4_ASSETS_PROMPT = `
 PHASE 4 – FULL BALANCE SHEET VERIFICATION
 Objective: Extract and verify EVERY line item from the Financial Statement Balance Sheet – Owners Equity, Assets, and Liabilities. **MANDATORY – You MUST apply GATE 2 logic (Phase 4 rules R1–R5) strictly per line-item type.**
 
+**CRITICAL – bs_amount & line_item SOURCE:** line_item and bs_amount MUST come from the **Balance Sheet (Financial Statement)** ONLY. Copy exactly as they appear on the FS Balance Sheet (Current Year column). Do NOT use General Ledger, Levy Report, Cash Summary, Owner Ledger, or any other document to fill bs_amount or line_item. supporting_amount is for verification (per R2–R5) – it is NOT the source of bs_amount.
+
+**CRITICAL – COMPLETENESS:** balance_sheet_verification MUST include EVERY line item on the Balance Sheet. Scan the FS Balance Sheet page-by-page. Do NOT omit Owners Equity, Assets, or Liabilities. Every BS row = one output row.
+
 **AUDIT PERIOD ANCHOR (global setting – use intake_summary.financial_year):** Use intake_summary.financial_year as the global audit period. **Current Year = the FY being audited.** Prior Year = the column immediately before it. If not yet in intake_summary, determine FY from minutes and write to intake_summary.
 
 **CURRENT YEAR COLUMN ONLY – PROHIBITED to use Prior Year for RULES 2–5:**

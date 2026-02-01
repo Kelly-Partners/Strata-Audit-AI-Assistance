@@ -38,6 +38,16 @@ export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
   },
 };
 
+/** CRITICAL – Column mapping for Opening vs Closing (DO NOT SWAP). Injected before OPENING and CLOSING rule sets. */
+export const PHASE_2_LEVY_BALANCE_COLUMN_MAP = `
+--- CRITICAL – LEVY BALANCE COLUMN MAPPING (DO NOT SWAP) ---
+**Op_Arrears and Op_Advance** = Prior Year column ONLY (or standalone prior-year FS). Opening balances = start of audit FY.
+**BS_Arrears and BS_Advance** = Current Year column ONLY. Closing balances = end of audit FY.
+DO NOT put Prior Year figures into BS_Arrears/BS_Advance. DO NOT put Current Year figures into Op_Arrears/Op_Advance.
+
+**Arrears vs Advance (identify by Dr/Cr):** Levies in Arrears = Debit (Dr) = asset (owners owe scheme). Levies in Advance = Credit (Cr) = liability (scheme owes future service). If a single "Levy Receivable" line shows Cr balance, treat as Advance. Do NOT swap Arrears and Advance amounts.
+`;
+
 /** Phase 2 – OPENING LEVY BALANCES (PRIOR-YEAR CARRY-FORWARD) – Evidence sourcing rule set */
 export const PHASE_2_OPENING_LEVY_RULES_PROMPT = `
 --- PHASE 2 – OPENING LEVY BALANCES (PRIOR-YEAR CARRY-FORWARD) – MANDATORY ---
@@ -108,28 +118,74 @@ Levies in Advance: Levy in Advance, Prepaid Levies, Owners Contributions in Adva
 - Administrative and Capital Funds not separately aligned (when BS has breakdown) → Evidence Incomplete
 `;
 
-/** Phase 2 – TOTAL RECEIPTS (GLOBAL) – Evidence sourcing rule set */
+/** Whitelist of report types acceptable for Admin / Capital Fund receipt summaries (Tier 1 – Admin & Capital Actual Payments approach). */
+export const PHASE_2_RECEIPTS_REPORT_WHITELIST = [
+  "Levy Position Report",
+  "Levy Positions",
+  "Levy Position Summary",
+  "Levy Position by Lot",
+  "Levy Position by Owner",
+  "Levy Arrears Report",
+  "Arrears Report",
+  "Arrears by Lot",
+  "Aged Levy Arrears",
+  "Outstanding Levies Report",
+  "Levy Outstanding Report",
+  "Owner Ledger",
+  "Lot Ledger",
+  "Owner Transaction Ledger",
+  "Lot Transaction Report",
+  "Owner Account Ledger",
+  "Lot Account Ledger",
+  "Levy Receipts Report",
+  "Levy Payments Report",
+  "Levy Collections Report",
+  "Levy Received Summary",
+  "Levy Payments by Lot",
+  "Levy Summary Report",
+  "Annual Levy Summary",
+  "Levy Summary by Fund",
+  "Levy Summary by Lot",
+  "Levy Summary – Admin / Capital",
+  "Admin Fund Levy Position",
+  "Capital Works Levy Position",
+  "Sinking Fund Levy Report",
+  "Fund Ledger – Admin Fund",
+  "Fund Ledger – Capital / Sinking Fund",
+  "Accounts Receivable – Owners",
+  "Owners Receivables Report",
+  "Levy Receivable Report",
+  "Receivables by Lot",
+  "Contribution Ledger",
+  "Contribution Report",
+  "Owner Contributions",
+  "Charges & Contributions Report",
+  "Owner Charges Report",
+] as const;
+
+/** Phase 2 – TOTAL RECEIPTS (GLOBAL) – Evidence sourcing rule set (Admin & Capital Actual Payments: Admin + Capital fund receipts). */
 export const PHASE_2_TOTAL_RECEIPTS_RULES_PROMPT = `
---- PHASE 2 – TOTAL RECEIPTS (GLOBAL) – MANDATORY ---
-RULE SET (ENFORCE): Total_Receipts_Global MUST be sourced from Tier 1 cash-based receipt summary. Non_Levy_Income from same source. Effective_Levy_Receipts = Total_Receipts_Global - Non_Levy_Income. Non-compliance → Not Resolved – Boundary Defined.
+--- PHASE 2 – TOTAL RECEIPTS (GLOBAL) – MANDATORY (ADMIN & CAPITAL ACTUAL PAYMENTS) ---
+RULE SET (ENFORCE): Total_Receipts_Global and Effective_Levy_Receipts MUST be sourced by actively finding **two** receipt/payment summaries for the audit FY: (1) **Administrative Fund** receipts for the year, (2) **Capital / Sinking Fund** receipts for the year. Non-compliance → Not Resolved – Boundary Defined.
 
-**Definition:** Total Receipts (Global) = total cash receipts received during the audit FY in respect of levies, across Administrative Fund and Capital / Sinking Fund.
+**Definition:** Total Receipts (Global) = total levy-related cash receipts received during the audit FY, across Administrative Fund and Capital / Sinking Fund. Effective_Levy_Receipts = Total_Receipts_Global (when sourced via Admin & Capital Actual Payments; these report types are levy/contribution focused).
 
-**Primary Evidence (Tier 1 – REQUIRED):**
-- AI MUST source Total_Receipts_Global from a **cash-based receipt summary**, including but not limited to: Cash Management Report, Cash Receipts Summary, Receipt Summary Report, Trust Account Receipts Report, Payments & Receipts Report (Receipts section), Receipts Journal, Bank Deposit Summary. Bank Statement alone is NOT sufficient unless accompanied by allocation worksheet segregating Admin/Capital and Levy/Non-Levy.
-- Requirements: Must be cash-based (actual receipts); must cover the audit financial year (intake_summary.financial_year); must include both Admin and Capital / Sinking funds.
-- If combined report: Total_Receipts_Global = Admin Receipts + Capital Receipts.
+**Admin & Capital Actual Payments approach (PRIMARY – REQUIRED):**
+- **Admin Fund:** Actively search for an **Administrative Fund** receipt or payment summary (or levy/contribution summary) for the audit financial year (intake_summary.financial_year). The report MUST be identifiable as Admin Fund (by title, section, or fund column).
+- **Capital / Sinking Fund:** Actively search for a **Capital / Sinking Fund** receipt or payment summary (or levy/contribution summary) for the same FY. The report MUST be identifiable as Capital or Sinking Fund.
+- **Combined:** Total_Receipts_Global = Admin Fund receipts total + Capital/Sinking Fund receipts total. Effective_Levy_Receipts = Total_Receipts_Global. Non_Levy_Income = 0.00 when using this method (no need to hunt for "non-levy" as a separate concept).
 
-**Levy vs Non-Levy Segregation (MANDATORY):**
-- From the same receipt source, identify whether non-levy income exists (e.g. interest, insurance recoveries, certificate fees, sundry income).
-- If non-levy exists: Non_Levy_Income = separately identified amount; Effective_Levy_Receipts = Total_Receipts_Global - Non_Levy_Income.
-- If no non-levy identified: Non_Levy_Income = 0.00; Effective_Levy_Receipts = Total_Receipts_Global.
+**Acceptable report types (whitelist – use document_register names or equivalent):**
+${PHASE_2_RECEIPTS_REPORT_WHITELIST.join("\n• ")}
 
-**Secondary Evidence (Tier 2 – SUPPORTING ONLY):**
-- Levy Receipts Report, Owner Ledger, Levy Ledger, Levy Collection Report, General Ledger (income accounts), Trial Balance may support or explain but MUST NOT replace cash-based receipt totals as the primary source.
+- Prefer reports whose titles or content explicitly indicate **receipts**, **payments**, **collections**, **contributions**, or **levy received** for the year. If a single report contains both Admin and Capital sections, extract each fund total separately and sum.
+- Requirements: Must cover the audit FY; must segregate or be clearly attributable to Admin vs Capital/Sinking Fund.
+
+**Fallback (if Admin & Capital separate fund reports are not available):**
+- If evidence contains a **single combined** cash-based receipt summary (e.g. Cash Management Report, Trust Account Receipts Report, Cash Receipts Summary) that already segregates Admin and Capital receipts for the FY, you MAY use that: Total_Receipts_Global = Admin Receipts + Capital Receipts from that report. If that combined source also identifies non-levy income (interest, insurance, cert fees, sundry), then Non_Levy_Income = that amount; Effective_Levy_Receipts = Total_Receipts_Global - Non_Levy_Income. Otherwise Non_Levy_Income = 0; Effective_Levy_Receipts = Total_Receipts_Global.
 
 **Prohibited Evidence (HARD STOP):**
-- General Ledger alone; Trial Balance alone; Financial Statements or Notes; Management summaries without transaction-level backing. If no Tier 1 cash-based receipt summary exists, mark as Not Resolved – Boundary Defined.
+- General Ledger alone; Trial Balance alone; Financial Statements or Notes (alone); management summaries without receipt/collection-level backing. If neither (1) Admin & Capital fund-specific receipt summaries from the whitelist nor (2) a single combined Tier 1 cash-based receipt summary exists, mark as Not Resolved – Boundary Defined.
 `;
 
 /** Phase 2 – GST COMPONENT (STANDARD LEVIES ONLY) – Rule set */
@@ -171,6 +227,8 @@ function formatPhase2RulesPrompt(): string {
       lines.push(`  Required evidence types: ${rule.requiredEvidenceTypes.join(", ")}.`);
     }
   }
+  lines.push("");
+  lines.push(PHASE_2_LEVY_BALANCE_COLUMN_MAP);
   lines.push("");
   lines.push(PHASE_2_OPENING_LEVY_RULES_PROMPT);
   lines.push("");

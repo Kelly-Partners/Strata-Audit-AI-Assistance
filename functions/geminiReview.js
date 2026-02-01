@@ -58,8 +58,8 @@ INSTRUCTIONS:
    "File Part 2" to the second, etc.
 2. The "Document_Origin_Name" in the JSON MUST match the filename exactly.
 3. Execute Phases 1-6 based on these files.
-4. **MANDATORY – Phase 2 rules:** Apply OPENING LEVY BALANCES (Prior-Year BS only), CLOSING LEVY BALANCES (Current-Year BS only), TOTAL RECEIPTS (Tier 1 cash-based only), GST COMPONENT, Old/New Rate Levies (minutes only, quarterly proportion). Do NOT use prohibited evidence.
-5. **MANDATORY – Phase 4 balance_sheet_verification:** You MUST populate as array. For Cash at Bank/Term Deposits: supporting_amount from Bank Statement/TD Statement (Tier 1) ONLY – do NOT use GL. For Levy Arrears: Tier 2 sub-ledger. Status per Phase 4 rules (R1–R5). For every line, fill "note" with AI explanation (same as Table E.Master Note/Source – e.g. "Bank Statement p.2 as at FY end").
+4. **MANDATORY – Phase 2 rules:** Apply OPENING LEVY BALANCES (Prior-Year BS only), CLOSING LEVY BALANCES (Current-Year BS only), TOTAL RECEIPTS (Tier 1 cash-based only), GST COMPONENT, Old/New Rate Levies (minutes only, quarterly proportion). **CRITICAL:** Op_Arrears, Op_Advance = Prior Year column ONLY; BS_Arrears, BS_Advance = Current Year column ONLY. Do NOT swap. Do NOT use prohibited evidence.
+5. **MANDATORY – Phase 4 balance_sheet_verification:** You MUST populate as array. **bs_amount and line_item** = from Balance Sheet (FS) ONLY – do NOT use GL, ledger, or summary. **supporting_amount** = verification evidence per R2–R5. Include EVERY Balance Sheet line – Owners Equity, Assets, Liabilities. For Cash at Bank/Term Deposits: supporting_amount from Bank Statement (Tier 1) ONLY. Status per Phase 4 rules. Fill "note" with AI explanation.
 `;
 
   let lastError;

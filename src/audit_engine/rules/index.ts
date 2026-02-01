@@ -10,5 +10,9 @@ export {
   PHASE_1_RULES_PROMPT,
 } from "./phase_1_rules";
 
-export { PHASE_2_ITEM_RULES, PHASE_2_RULES_PROMPT } from "./phase_2_rules";
+export {
+  PHASE_2_ITEM_RULES,
+  PHASE_2_RECEIPTS_REPORT_WHITELIST,
+  PHASE_2_RULES_PROMPT,
+} from "./phase_2_rules";
 export { PHASE_4_ITEM_RULES, PHASE_4_RULES_PROMPT } from "./phase_4_rules";
