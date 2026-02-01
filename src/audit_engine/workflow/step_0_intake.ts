@@ -44,4 +44,19 @@ Objective: Establish the single source of truth.
    - Extract **Strata Plan number** (e.g. SP 12345, Strata Plan 12345) from AGM Minutes, Committee Minutes, or Financial Statement. Populate intake_summary.strata_plan.
    - Extract **Financial Year** (FY) from the same documents. Anchor search in the section after "Audit Execution Report" and near the strata plan name. Format as DD/MM/YYYY - DD/MM/YYYY (e.g. 01/07/2024 - 30/06/2025) or DD/MM/YYYY for FY end. Populate intake_summary.financial_year.
    - This FY becomes the **global audit period** for all phases (Revenue, Assets, Expense, Compliance). Phases will use intake_summary.financial_year for time-based logic.
+
+6. CORE DATA POSITIONS (MANDATORY for Step 0 – lock locations for Phase 2/4/3):
+   - **balance_sheet**: Locate the Balance Sheet (within Financial Statement). Output doc_id (from document_register) and page_range (e.g. "Pages 5-7"). If FS has no distinct BS section, use the page(s) where BS appears.
+   - **bank_statement**: Which doc + page_range contains Bank Statement as at FY end? Include as_at_date if visible.
+   - **levy_report**: Which doc + page_range contains Levy Position Report or equivalent (Tier 2)?
+   - **levy_receipts_admin** / **levy_receipts_capital**: Which doc(s) + page_range contain Admin Fund and Capital Fund receipt summaries for the FY? (For Admin & Capital Actual Payments.)
+   - **general_ledger**: Which doc + page_range contains the GL?
+   - **minutes_levy** / **minutes_auth**: Which doc + page_ref has levy rate adoption (Old/New) and manager authorization limits?
+   - If a doc type is not found, set that key to null.
+
+7. BS COLUMN MAPPING (when Balance Sheet has Prior Year and Current Year columns):
+   - Extract the exact column header/label for **Current Year** (e.g. "30 Jun 2025") and **Prior Year** (e.g. "30 Jun 2024"). Use the verbatim text from the FS. If single-column BS, omit or set null.
+
+8. BS STRUCTURE (optional but recommended):
+   - List every line item that appears on the Balance Sheet, in order. For each: line_item (exact name from FS), section (OWNERS_EQUITY | ASSETS | LIABILITIES), fund (Admin | Capital | N/A if not applicable).
 `;

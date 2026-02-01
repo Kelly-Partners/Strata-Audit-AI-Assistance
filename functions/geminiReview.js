@@ -22,7 +22,7 @@ const MODELS = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"];
  * @returns {Promise<object>} AuditResponse JSON
  */
 async function executeFullReview(opts) {
-  const {apiKey, systemPrompt, fileManifest, files, previousAudit} = opts;
+  const {apiKey, systemPrompt, fileManifest, files, previousAudit, mode = "full"} = opts;
   if (!apiKey || !systemPrompt || !fileManifest || !Array.isArray(files)) {
     throw new Error("Missing required: apiKey, systemPrompt, fileManifest, files");
   }
@@ -35,7 +35,24 @@ async function executeFullReview(opts) {
     },
   }));
 
-  const userInstruction = previousAudit ?
+  const isStep0Only = mode === "step0_only";
+  const isCall2Phase = mode === "levy" || mode === "phase4" || mode === "expenses";
+  const userInstruction = isCall2Phase && previousAudit ?
+    `
+ATTACHED FILE MAPPING (Strictly map the binary parts to these names):
+${fileManifest}
+
+*** LOCKED STEP 0 OUTPUT (DO NOT RE-EXTRACT – USE AS-IS) ***
+${JSON.stringify(previousAudit)}
+
+*** CALL 2 – ${mode.toUpperCase()} ONLY ***
+INSTRUCTIONS:
+1. You MUST use the LOCKED STEP 0 OUTPUT above. Do NOT re-extract document_register or intake_summary.
+2. Use core_data_positions for document/page locations. Use intake_summary.financial_year as global FY.
+3. Execute ${mode === "levy" ? "Phase 2 (Levy Reconciliation)" : mode === "phase4" ? "Phase 4 (Balance Sheet Verification)" : "Phase 3 (Expenses Vouching)"} ONLY.
+4. Return ONLY ${mode === "levy" ? "\"levy_reconciliation\"" : mode === "phase4" ? "\"assets_and_cash\"" : "\"expense_samples\""}. No other keys.
+` :
+    previousAudit && !isStep0Only ?
     `
 ATTACHED FILE MAPPING (Strictly map the binary parts to these names):
 ${fileManifest}
@@ -49,7 +66,22 @@ INSTRUCTIONS:
 2. Check "missing_critical_types" in "intake_summary". If a missing doc is now provided, resolve it.
 3. Return the merged JSON.
 ` :
-    `
+    isStep0Only ?
+      `
+ATTACHED FILE MAPPING (Strictly map the binary parts to these names):
+${fileManifest}
+
+*** STEP 0 ONLY – DOCUMENT INTAKE ***
+INSTRUCTIONS:
+1. Execute Step 0 ONLY. Create the Document Dictionary. You MUST map "File Part 1" to the first name in the list above, "File Part 2" to the second, etc.
+2. The "Document_Origin_Name" in the JSON MUST match the filename exactly.
+3. Do NOT execute Phases 1–6. Return document_register, intake_summary, core_data_positions, bs_column_mapping, and bs_structure. Do NOT include levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance, or completion_outputs.
+4. Extract strata_plan and financial_year from minutes/financials into intake_summary.
+5. Populate core_data_positions with doc_id and page_range for each evidence type (balance_sheet, bank_statement, levy_report, etc.). Use null if not found.
+6. Populate bs_column_mapping with current_year_label and prior_year_label when BS has two columns; else null.
+7. Populate bs_structure with every Balance Sheet line item (line_item, section, fund) when possible.
+` :
+      `
 ATTACHED FILE MAPPING (Strictly map the binary parts to these names):
 ${fileManifest}
 

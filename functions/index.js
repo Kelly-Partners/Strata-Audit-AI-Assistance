@@ -34,6 +34,7 @@ exports.executeFullReview = onRequest(
       region: "australia-southeast1",
       secrets: [geminiApiKeySecret],
       timeoutSeconds: 540,
+      memory: "1GiB",
       invoker: "public",
       cors: CORS_ALLOWED_ORIGINS,
     },
@@ -88,6 +89,7 @@ exports.executeFullReview = onRequest(
           fileManifest: body.fileManifest,
           files: body.files || [],
           previousAudit: body.previousAudit,
+          mode: body.mode || "full",
         });
 
         res.status(200).json(result);

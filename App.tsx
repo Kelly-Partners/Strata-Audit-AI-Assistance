@@ -17,8 +17,9 @@ const App: React.FC = () => {
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
 
-  // UI State
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  // UI State: Create modal only for initial plan creation
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createDraft, setCreateDraft] = useState<{ name: string; files: File[] }>({ name: "", files: [] });
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
   // Login page state (参考 strata-tax-review-assistance 登录结构)
@@ -82,19 +83,49 @@ const App: React.FC = () => {
 
   // --- PLAN MANAGEMENT HELPERS ---
 
-  const createPlan = (initialFiles: File[] = []): string => {
+  const createPlan = (initialFiles: File[] = [], name?: string): string => {
     const newPlan: Plan = {
       id: crypto.randomUUID(),
-      name: initialFiles.length > 0 ? initialFiles[0].name.split('.')[0] : `Audit Plan ${plans.length + 1}`,
+      name: name || (initialFiles.length > 0 ? initialFiles[0].name.split('.')[0] : `Audit Plan ${plans.length + 1}`),
       createdAt: Date.now(),
       status: 'idle',
       files: initialFiles,
       result: null,
-      triage: [], // Init empty triage
-      error: null
+      triage: [],
+      error: null,
     };
-    setPlans(prev => [...prev, newPlan]);
+    setPlans((prev) => [...prev, newPlan]);
     return newPlan.id;
+  };
+
+  const handleCreatePlanConfirm = async () => {
+    const { name, files } = createDraft;
+    if (!firebaseUser || files.length === 0) return;
+    const planName = name.trim() || files[0]?.name.split('.')[0] || `Audit Plan ${plans.length + 1}`;
+    const createdAt = Date.now();
+    const id = createPlan(files, planName);
+    setIsCreateModalOpen(false);
+    setCreateDraft({ name: "", files: [] });
+    setActivePlanId(id);
+    await savePlanToFirestore(db, id, {
+      userId: firebaseUser.uid,
+      name: planName,
+      createdAt,
+      status: "idle",
+    });
+    try {
+      const filePaths = await uploadPlanFiles(storage, firebaseUser.uid, id, files);
+      await savePlanToFirestore(db, id, {
+        userId: firebaseUser.uid,
+        name: planName,
+        createdAt,
+        status: "idle",
+        filePaths,
+      });
+      updatePlan(id, { filePaths });
+    } catch (_) {
+      updatePlan(id, { error: "Failed to save files." });
+    }
   };
 
   const updatePlan = (id: string, updates: Partial<Plan>) => {
@@ -144,6 +175,136 @@ const App: React.FC = () => {
 
   // --- LOGIC ENGINE EXECUTION ---
 
+  /** Infer next step from plan state: call1 (Step 0), call2, or done */
+  const getNextStep = (plan: Plan): "call1" | "call2" | "done" => {
+    if (!plan.result?.document_register?.length) return "call1";
+    const hasCall2 =
+      (plan.result.levy_reconciliation != null && Object.keys(plan.result.levy_reconciliation?.master_table || {}).length > 0) ||
+      (plan.result.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
+      (plan.result.expense_samples?.length ?? 0) > 0;
+    return hasCall2 ? "done" : "call2";
+  };
+
+  const handleNextStep = async (planId: string) => {
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) return;
+    const step = getNextStep(plan);
+    if (step === "call1") return handleRunStep0Only(planId);
+    if (step === "call2") return handleRunCall2(planId);
+  };
+
+  const handleRunCall2 = async (planId: string) => {
+    const targetPlan = plans.find((p) => p.id === planId);
+    if (!targetPlan) return;
+    if (!firebaseUser) {
+      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      return;
+    }
+    if (targetPlan.files.length === 0) {
+      updatePlan(planId, { error: "No evidence files found." });
+      return;
+    }
+    const step0 = targetPlan.result;
+    if (!step0?.document_register?.length || !step0?.intake_summary) {
+      updatePlan(planId, { error: "请先运行 Step 0 only，再执行 Call 2。" });
+      return;
+    }
+    updatePlan(planId, { status: "processing", error: null });
+    setIsCreateModalOpen(false);
+    const userId = firebaseUser.uid;
+    const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
+    let filePaths: string[] = [];
+    try {
+      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files!);
+      const runPhase = (phase: "levy" | "phase4" | "expenses") =>
+        callExecuteFullReview({
+          files: targetPlan.files,
+          expectedPlanId: planId,
+          mode: phase,
+          step0Output: step0,
+        });
+      const [levyRes, phase4Res, expensesRes] = await Promise.all([
+        runPhase("levy"),
+        runPhase("phase4"),
+        runPhase("expenses"),
+      ]);
+      const merged: typeof step0 = {
+        ...step0,
+        levy_reconciliation: levyRes.levy_reconciliation,
+        assets_and_cash: phase4Res.assets_and_cash,
+        expense_samples: expensesRes.expense_samples,
+      };
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: "completed",
+        filePaths,
+        result: merged,
+        triage: targetPlan.triage,
+      });
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === planId ? { ...p, status: "completed" as const, result: merged } : p
+        )
+      );
+    } catch (err: unknown) {
+      const errMessage = (err as Error)?.message || "Call 2 Failed";
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: "failed",
+        ...(filePaths.length > 0 ? { filePaths } : {}),
+        error: errMessage,
+      });
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === planId ? { ...p, status: "failed" as const, error: errMessage } : p
+        )
+      );
+    }
+  };
+
+  const handleRunStep0Only = async (planId: string) => {
+    const targetPlan = plans.find(p => p.id === planId);
+    if (!targetPlan) return;
+    if (!firebaseUser) {
+      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      return;
+    }
+    if (targetPlan.files.length === 0) {
+      updatePlan(planId, { error: "No evidence files found." });
+      return;
+    }
+    updatePlan(planId, { status: 'processing', error: null });
+    setIsCreateModalOpen(false);
+    const userId = firebaseUser.uid;
+    const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
+    let filePaths: string[] = [];
+    try {
+      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+      const auditResult = await callExecuteFullReview({
+        files: targetPlan.files,
+        expectedPlanId: planId,
+        mode: 'step0_only',
+      });
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: 'completed',
+        filePaths,
+        result: auditResult,
+        triage: targetPlan.triage,
+      });
+      setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: 'completed' as const, result: auditResult } : p));
+    } catch (err: unknown) {
+      const errMessage = (err as Error)?.message || "Execution Failed";
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: 'failed',
+        ...(filePaths.length > 0 ? { filePaths } : {}),
+        error: errMessage,
+      });
+      setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: 'failed' as const, error: errMessage } : p));
+    }
+  };
+
   const handleRunAudit = async (planId: string) => {
     const targetPlan = plans.find(p => p.id === planId);
     if (!targetPlan) return;
@@ -157,9 +318,8 @@ const App: React.FC = () => {
       return;
     }
 
-    // Set Processing State
     updatePlan(planId, { status: 'processing', error: null });
-    setIsUploadModalOpen(false); // Close modal if open
+    setIsCreateModalOpen(false);
 
     const userId = firebaseUser.uid;
     const baseDoc = {
@@ -240,15 +400,11 @@ const App: React.FC = () => {
         
         if (newFiles.length > 0) {
             if (activePlanId) {
-                // If inside a plan, append to current plan and open modal
                 const currentFiles = activePlan?.files || [];
                 updatePlan(activePlanId, { files: [...currentFiles, ...newFiles] });
-                setIsUploadModalOpen(true);
             } else {
-                // If on dashboard, create NEW plan
-                const newId = createPlan(newFiles);
-                setActivePlanId(newId);
-                setIsUploadModalOpen(true);
+                setCreateDraft({ name: newFiles[0]?.name.split('.')[0] || "", files: newFiles });
+                setIsCreateModalOpen(true);
             }
         }
       }
@@ -545,11 +701,10 @@ const App: React.FC = () => {
 
         {/* Sidebar Footer */}
         <div className="p-6 border-t border-gray-800 text-sm font-semibold text-gray-600">
-           <button 
+           <button
              onClick={() => {
-                const id = createPlan();
-                setActivePlanId(id);
-                setIsUploadModalOpen(true);
+               setCreateDraft({ name: "", files: [] });
+               setIsCreateModalOpen(true);
              }}
              className="w-full mb-4 border border-gray-700 hover:border-[#C5A059] text-gray-400 hover:text-[#C5A059] py-2 rounded-sm transition-colors flex items-center justify-center gap-2 text-sm font-semibold"
            >
@@ -592,11 +747,10 @@ const App: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                  {/* Create New Card */}
-                 <button 
+                 <button
                    onClick={() => {
-                      const id = createPlan();
-                      setActivePlanId(id);
-                      setIsUploadModalOpen(true);
+                     setCreateDraft({ name: "", files: [] });
+                     setIsCreateModalOpen(true);
                    }}
                    className="group min-h-[240px] border-2 border-dashed border-gray-300 hover:border-[#C5A059] rounded-lg flex flex-col items-center justify-center p-6 transition-all hover:bg-white hover:shadow-lg"
                  >
@@ -632,7 +786,7 @@ const App: React.FC = () => {
                              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{plan.status}</span>
                           </div>
                           <h3 className="text-xl font-bold text-black leading-tight mb-2 line-clamp-2">{plan.name}</h3>
-                          <p className="text-xs text-gray-500">{new Date(plan.createdAt).toLocaleDateString()} • {plan.files.length} Files</p>
+                          <p className="text-xs text-gray-500">{new Date(plan.createdAt).toLocaleDateString()} • {(plan.filePaths?.length ?? plan.files.length) || 0} Files</p>
                        </div>
 
                        <div className="mt-4 pt-4 border-t border-gray-100">
@@ -655,54 +809,78 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* --- VIEW: ACTIVE PLAN REPORT --- */}
-        {activePlan && activePlan.status === 'completed' && activePlan.result && (
-           <div className="max-w-[1600px] mx-auto p-10 animate-fade-in">
-              <div className="mb-8 pb-6 border-b border-gray-200 flex items-end justify-between">
-                 <div>
-                    <span className="text-[#C5A059] text-xs font-bold uppercase tracking-wider mb-2 block">Comprehensive Audit Report</span>
-                    <h2 className="text-3xl font-bold text-black tracking-tight flex items-center gap-3">
-                       {activePlan.name}
-                       <button onClick={() => setIsUploadModalOpen(true)} className="text-gray-400 hover:text-black transition-colors">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                       </button>
-                    </h2>
+        {/* --- VIEW: UNIFIED PLAN INTERFACE --- */}
+        {activePlan && (
+           <div className="max-w-[1600px] mx-auto p-10 animate-fade-in flex flex-col min-h-0">
+              {/* Fixed Header: Plan name + Next Step button */}
+              <div className="flex items-center justify-between gap-4 pb-6 border-b border-gray-200 shrink-0 flex-wrap">
+                 <div className="flex items-center gap-4 min-w-0">
+                    <input
+                      value={activePlan.name}
+                      onChange={(e) => updatePlan(activePlan.id, { name: e.target.value })}
+                      className="text-2xl font-bold text-black bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-[#C5A059] focus:outline-none px-1 py-0.5 -ml-1"
+                    />
+                    {activePlan.result?.intake_summary?.status && (
+                      <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded shrink-0">
+                        {activePlan.result.intake_summary.status}
+                      </span>
+                    )}
                  </div>
-                 <div className="text-right">
-                    <div className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">System ID</div>
-                    <div className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">{activePlan.result.intake_summary?.status || 'SYS-INIT'}</div>
-                 </div>
+                 {getNextStep(activePlan) !== "done" && (
+                   <button
+                     onClick={() => handleNextStep(activePlan.id)}
+                     disabled={!firebaseUser || activePlan.files.length === 0 || activePlan.status === "processing" || (getNextStep(activePlan) === "call2" && !activePlan.result?.document_register?.length)}
+                     className={`shrink-0 px-6 py-3 font-bold text-[13px] uppercase tracking-widest rounded-sm border-2 transition-all focus:outline-none ${
+                       !firebaseUser || activePlan.files.length === 0 || activePlan.status === "processing" || (getNextStep(activePlan) === "call2" && !activePlan.result?.document_register?.length)
+                         ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                         : "bg-[#C5A059] border-[#C5A059] text-black hover:bg-[#A08040] hover:border-[#A08040]"
+                     }`}
+                   >
+                     Next Step
+                   </button>
+                 )}
               </div>
-              <AuditReport 
-                  data={activePlan.result} 
-                  files={activePlan.files}
-                  triageItems={activePlan.triage}
-                  onTriage={handleTriage}
-              />
-           </div>
-        )}
 
-        {/* --- VIEW: EMPTY PLAN / ERROR --- */}
-        {activePlan && (activePlan.status === 'idle' || activePlan.status === 'failed') && (
-            <div className="h-[75vh] flex flex-col items-center justify-center text-center opacity-60">
-                <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-6 text-gray-400">
-                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              {/* Error banner */}
+              {activePlan.status === "failed" && activePlan.error && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded text-red-800 text-sm">
+                  {activePlan.error}
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800 uppercase tracking-widest mb-3">
-                   {activePlan.status === 'failed' ? "Execution Failed" : "Ready to Ingest"}
-                </h2>
-                <p className="text-gray-500 max-w-md mx-auto mb-8">
-                  {activePlan.status === 'failed' 
-                    ? `Error: ${activePlan.error}` 
-                    : "Configure this plan by uploading evidence. The Logic Engine is standby."}
-                </p>
-                <button 
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="bg-black text-white hover:bg-[#C5A059] px-6 py-3 font-bold uppercase tracking-widest text-xs rounded transition-colors"
-                >
-                   {activePlan.status === 'failed' ? "Retry Configuration" : "Configure Evidence"}
-                </button>
-            </div>
+              )}
+
+              {/* Files section (collapsible) */}
+              <details className="mt-6 shrink-0" open>
+                <summary className="cursor-pointer text-sm font-bold text-gray-600 uppercase tracking-wider flex items-center gap-2">
+                  <span>Evidence Files ({activePlan.files.length})</span>
+                </summary>
+                <div className="mt-4 p-4 bg-white rounded border border-gray-200">
+                  <FileUpload
+                    onFilesSelected={(newFiles) => updatePlan(activePlan.id, { files: newFiles })}
+                    selectedFiles={activePlan.files}
+                  />
+                </div>
+              </details>
+
+              {/* Report or empty state */}
+              <div className="mt-8 flex-1 min-h-0">
+                {activePlan.result ? (
+                  <AuditReport
+                    data={activePlan.result}
+                    files={activePlan.files}
+                    triageItems={activePlan.triage}
+                    onTriage={handleTriage}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                    <svg className="w-16 h-16 mb-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-sm font-semibold uppercase tracking-wider">No report yet</p>
+                    <p className="text-xs mt-1">Upload files above, then click Next Step to run.</p>
+                  </div>
+                )}
+              </div>
+           </div>
         )}
       </main>
 
@@ -737,89 +915,51 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* --- CONFIGURATION & UPLOAD MODAL --- */}
-      {isUploadModalOpen && activePlan && (
+      {/* --- CREATE NEW PLAN MODAL --- */}
+      {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade-in">
-           <div className="bg-white w-full max-w-5xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              
-              {/* Modal Header */}
-              <div className="bg-black text-white px-8 py-6 flex justify-between items-center shrink-0 border-b border-gray-800">
-                 <div className="flex items-center gap-4">
-                    <div className="bg-[#C5A059] h-10 w-10 flex items-center justify-center text-black font-bold rounded-sm text-lg">0</div>
-                    <div>
-                       <h2 className="text-xl font-bold uppercase tracking-widest">Configuration & Evidence</h2>
-                       <p className="text-xs text-gray-400 mt-1 uppercase tracking-wide">Plan: {activePlan.name}</p>
-                    </div>
-                 </div>
-                 <button onClick={() => setIsUploadModalOpen(false)} className="text-gray-500 hover:text-white transition-colors p-2">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                 </button>
+          <div className="bg-white w-full max-w-2xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-black text-white px-8 py-6 flex justify-between items-center shrink-0 border-b border-gray-800">
+              <h2 className="text-xl font-bold uppercase tracking-widest">Create New Plan</h2>
+              <button onClick={() => { setIsCreateModalOpen(false); setCreateDraft({ name: "", files: [] }); }} className="text-gray-500 hover:text-white transition-colors p-2">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <div className="p-8 overflow-y-auto bg-gray-50 space-y-6">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Plan Name</label>
+                <input
+                  type="text"
+                  value={createDraft.name}
+                  onChange={(e) => setCreateDraft((d) => ({ ...d, name: e.target.value }))}
+                  placeholder={createDraft.files[0]?.name.split('.')[0] || "e.g. SP 12345 Audit"}
+                  className="w-full px-4 py-3 border border-gray-300 rounded text-[14px] focus:border-[#C5A059] focus:outline-none"
+                />
               </div>
-
-              {/* Modal Body */}
-              <div className="p-8 sm:p-10 overflow-y-auto bg-gray-50">
-                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                    
-                    {/* Left Column: Config */}
-                    <div className="lg:col-span-4 space-y-6">
-                       <div className="bg-white p-6 rounded border border-gray-200 shadow-sm">
-                           <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Plan Settings</label>
-                           <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide mb-2">Plan Name</label>
-                           <input 
-                              type="text"
-                              value={activePlan.name}
-                              onChange={(e) => updatePlan(activePlan.id, { name: e.target.value })}
-                              className="w-full px-4 py-3 border border-gray-300 rounded text-[14px] focus:border-[#C5A059] focus:outline-none"
-                           />
-                       </div>
-
-                       <div className="bg-blue-50 p-6 rounded border border-blue-100">
-                          <h4 className="text-blue-900 font-bold uppercase text-xs tracking-wide mb-2">Instructions</h4>
-                          <p className="text-blue-800 text-sm leading-relaxed mb-3">
-                             Upload all relevant PDF, Excel, or CSV files for this specific strata plan.
-                          </p>
-                       </div>
-                    </div>
-
-                    {/* Right Column: Upload */}
-                    <div className="lg:col-span-8 space-y-4">
-                      <div className="bg-white p-8 rounded border border-gray-200 shadow-sm h-full flex flex-col">
-                          <div className="mb-6 flex justify-between items-center">
-                             <label className="block text-sm font-bold text-gray-800 uppercase tracking-wide">Evidence Repository</label>
-                             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold uppercase">{activePlan.files.length} Files Selected</span>
-                          </div>
-                          <div className="flex-1">
-                             <FileUpload 
-                                onFilesSelected={(newFiles) => updatePlan(activePlan.id, { files: newFiles })}
-                                selectedFiles={activePlan.files} 
-                             />
-                          </div>
-                      </div>
-                    </div>
-                 </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Evidence Files</label>
+                <FileUpload
+                  onFilesSelected={(files) => setCreateDraft((d) => ({ ...d, files }))}
+                  selectedFiles={createDraft.files}
+                />
               </div>
-
-              {/* Modal Footer */}
-              <div className="bg-white px-8 py-6 border-t border-gray-200 flex justify-end items-center shrink-0 gap-4">
-                 <button 
-                    onClick={() => setIsUploadModalOpen(false)}
-                    className="px-6 py-3 font-bold text-gray-500 uppercase tracking-widest text-xs hover:text-black transition-colors"
-                 >
-                    Cancel
-                 </button>
-                 <button
-                    onClick={() => handleRunAudit(activePlan.id)}
-                    disabled={!firebaseUser || activePlan.files.length === 0}
-                    className={`px-10 py-4 font-bold text-[14px] uppercase tracking-widest transition-all focus:outline-none rounded-sm border-2 shadow-lg min-w-[200px] flex justify-center ${
-                      !firebaseUser || activePlan.files.length === 0
-                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'bg-[#C5A059] border-[#C5A059] text-white hover:bg-[#A08040] hover:border-[#A08040] hover:shadow-xl'
-                    }`}
-                  >
-                    {!firebaseUser ? "请先登录" : activePlan.result ? "Update Model" : "Execute Engine"}
-                  </button>
-              </div>
-           </div>
+            </div>
+            <div className="bg-white px-8 py-6 border-t border-gray-200 flex justify-end gap-4 shrink-0">
+              <button
+                onClick={() => { setIsCreateModalOpen(false); setCreateDraft({ name: "", files: [] }); }}
+                className="px-6 py-3 font-bold text-gray-500 uppercase tracking-widest text-xs hover:text-black transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreatePlanConfirm}
+                disabled={!firebaseUser || createDraft.files.length === 0}
+                className="px-8 py-3 font-bold text-[13px] uppercase tracking-widest rounded-sm bg-[#C5A059] text-black hover:bg-[#A08040] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Create & Open
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -1,7 +1,16 @@
 
 
 import React, { useState, useRef, useEffect } from 'react';
-import { AuditResponse, TraceableValue, DocumentEntry, VerificationStep, TriageItem } from '../types';
+import {
+  AuditResponse,
+  TraceableValue,
+  DocumentEntry,
+  VerificationStep,
+  TriageItem,
+  CoreDataPositions,
+  BsColumnMapping,
+  BsStructureItem,
+} from '../types';
 
 /** Extract 1-based page number from various ref formats: "Page 3", "p.3", "pg 3", "3" */
 function extractPageNumber(s: string): string | null {
@@ -640,6 +649,142 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Core Data Positions */}
+              <div className="mt-10 pt-8 border-t border-gray-200">
+                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                  <h4 className="text-[14px] font-bold text-black uppercase tracking-wide">
+                    Core Data Positions
+                  </h4>
+                  <p className="text-[12px] text-gray-500 mt-1">
+                    Document & page locations for Levy, BS Verification, Expenses
+                  </p>
+                </div>
+                {safeData.core_data_positions ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[
+                      { key: 'balance_sheet', label: 'Balance Sheet' },
+                      { key: 'bank_statement', label: 'Bank Statement' },
+                      { key: 'levy_report', label: 'Levy Report' },
+                      { key: 'levy_receipts_admin', label: 'Levy Receipts (Admin)' },
+                      { key: 'levy_receipts_capital', label: 'Levy Receipts (Capital)' },
+                      { key: 'general_ledger', label: 'General Ledger' },
+                      { key: 'minutes_levy', label: 'Minutes (Levy)' },
+                      { key: 'minutes_auth', label: 'Minutes (Auth)' },
+                    ].map(({ key, label }) => {
+                      const loc = (safeData.core_data_positions as CoreDataPositions)[
+                        key as keyof CoreDataPositions
+                      ];
+                      const val = loc && typeof loc === 'object' && !Array.isArray(loc)
+                        ? 'page_ref' in loc
+                          ? `${loc.doc_id} › ${loc.page_ref}`
+                          : `${loc.doc_id} › ${loc.page_range}${loc.as_at_date ? ` (${loc.as_at_date})` : ''}`
+                        : '–';
+                      return (
+                        <div
+                          key={key}
+                          className="p-4 bg-gray-50 border border-gray-100 rounded"
+                        >
+                          <div className="text-[11px] text-gray-500 uppercase font-bold tracking-widest mb-1">
+                            {label}
+                          </div>
+                          <div className="text-[13px] font-mono text-gray-800 break-words">
+                            {val}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-6 bg-gray-50 border border-gray-100 rounded text-center text-gray-500 text-[13px] italic">
+                    Run Step 0 only to extract core data positions.
+                  </div>
+                )}
+              </div>
+
+              {/* BS Column Mapping */}
+              <div className="mt-10 pt-8 border-t border-gray-200">
+                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                  <h4 className="text-[14px] font-bold text-black uppercase tracking-wide">
+                    BS Column Mapping
+                  </h4>
+                  <p className="text-[12px] text-gray-500 mt-1">
+                    Prior Year / Current Year column labels for column anchoring
+                  </p>
+                </div>
+                {safeData.bs_column_mapping ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30 rounded">
+                      <div className="text-[11px] text-[#C5A059] uppercase font-bold tracking-widest mb-2">
+                        Current Year
+                      </div>
+                      <div className="text-[15px] font-bold text-black font-mono">
+                        {safeData.bs_column_mapping.current_year_label || '–'}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded">
+                      <div className="text-[11px] text-gray-500 uppercase font-bold tracking-widest mb-2">
+                        Prior Year
+                      </div>
+                      <div className="text-[15px] font-bold text-black font-mono">
+                        {safeData.bs_column_mapping.prior_year_label || '–'}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-6 bg-gray-50 border border-gray-100 rounded text-center text-gray-500 text-[13px] italic">
+                    Run Step 0 only to extract BS column mapping.
+                  </div>
+                )}
+              </div>
+
+              {/* BS Structure */}
+              <div className="mt-10 pt-8 border-t border-gray-200">
+                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                  <h4 className="text-[14px] font-bold text-black uppercase tracking-wide">
+                    Balance Sheet Structure
+                  </h4>
+                  <p className="text-[12px] text-gray-500 mt-1">
+                    Line items on the Balance Sheet (for Phase 4 completeness)
+                  </p>
+                </div>
+                {safeData.bs_structure && Array.isArray(safeData.bs_structure) && safeData.bs_structure.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left border border-gray-200">
+                      <thead className="bg-gray-100 text-black uppercase font-bold text-[12px] tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3 border-b border-gray-200">#</th>
+                          <th className="px-4 py-3 border-b border-gray-200">Line Item</th>
+                          <th className="px-4 py-3 border-b border-gray-200">Section</th>
+                          <th className="px-4 py-3 border-b border-gray-200">Fund</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-[14px]">
+                        {(safeData.bs_structure as BsStructureItem[]).map((row, i) => (
+                          <tr key={i} className="bg-white hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 text-gray-500">{i + 1}</td>
+                            <td className="px-4 py-3 font-medium text-gray-900">{row.line_item}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 text-[11px] font-bold uppercase ${
+                                row.section === 'OWNERS_EQUITY' ? 'bg-amber-50 text-amber-800' :
+                                row.section === 'ASSETS' ? 'bg-green-50 text-green-800' :
+                                'bg-blue-50 text-blue-800'
+                              }`}>
+                                {row.section}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{row.fund || 'N/A'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-6 bg-gray-50 border border-gray-100 rounded text-center text-gray-500 text-[13px] italic">
+                    Run Step 0 only to extract Balance Sheet structure.
+                  </div>
+                )}
               </div>
             </div>
           </div>

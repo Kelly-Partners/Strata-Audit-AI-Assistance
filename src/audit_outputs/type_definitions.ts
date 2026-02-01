@@ -24,6 +24,44 @@ export interface IntakeSummary {
   financial_year?: string;
 }
 
+/** Step 0: Location lock for a document */
+export interface DocLocation {
+  doc_id: string;
+  page_range: string;
+  as_at_date?: string;
+}
+
+/** Step 0: Minutes reference (page_ref instead of page_range) */
+export interface MinutesRef {
+  doc_id: string;
+  page_ref: string;
+}
+
+/** Step 0: Core data positions – lock document/page locations for Phase 2/4/3 */
+export interface CoreDataPositions {
+  balance_sheet?: DocLocation | null;
+  bank_statement?: DocLocation | null;
+  levy_report?: DocLocation | null;
+  levy_receipts_admin?: DocLocation | null;
+  levy_receipts_capital?: DocLocation | null;
+  general_ledger?: DocLocation | null;
+  minutes_levy?: MinutesRef | null;
+  minutes_auth?: MinutesRef | null;
+}
+
+/** Step 0: Balance Sheet column mapping (when BS has Prior/Current Year columns) */
+export interface BsColumnMapping {
+  current_year_label: string;
+  prior_year_label: string;
+}
+
+/** Step 0: Balance Sheet line item structure */
+export interface BsStructureItem {
+  line_item: string;
+  section: "OWNERS_EQUITY" | "ASSETS" | "LIABILITIES";
+  fund?: string;
+}
+
 export interface TraceableValue {
   amount: number;
   source_doc_id: string;
@@ -192,6 +230,12 @@ export interface CompletionOutputs {
 export interface AuditResponse {
   document_register: DocumentEntry[];
   intake_summary: IntakeSummary;
+  /** Step 0: Core data positions (document/page locks for Phase 2/4/3) */
+  core_data_positions?: CoreDataPositions | null;
+  /** Step 0: BS column mapping when Prior/Current Year columns exist */
+  bs_column_mapping?: BsColumnMapping | null;
+  /** Step 0: Balance Sheet line item structure */
+  bs_structure?: BsStructureItem[] | null;
   levy_reconciliation?: LevyReconciliation;
   assets_and_cash?: AssetsAndCash;
   expense_samples?: ExpenseSample[];

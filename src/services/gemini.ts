@@ -4,19 +4,24 @@
  * 请求带 Authorization: Bearer <Firebase ID Token>，body 含 files、expectedPlanId 及 Function 所需字段。
  */
 
-import { buildSystemPrompt } from "../audit_engine";
+import {
+  buildSystemPrompt,
+  buildStep0Prompt,
+  buildLevyPrompt,
+  buildPhase4Prompt,
+  buildExpensesPrompt,
+} from "../audit_engine";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
 import { auth } from "./firebase";
 
 const PROJECT_ID = "strata-audit-ai-reviewer";
-const DEFAULT_FUNCTION_URL =
+const DIRECT_FUNCTION_URL =
   `https://australia-southeast1-${PROJECT_ID}.cloudfunctions.net/executeFullReview`;
 
+/** 始终用直连 URL：Hosting rewrite 有 ~60s 超时，会导致 503 first byte timeout；直连可支持 9 分钟 */
 function getFunctionUrl(): string {
   const envUrl = import.meta.env.VITE_FUNCTION_URL;
-  return (typeof envUrl === "string" && envUrl.trim() !== "")
-    ? envUrl.trim()
-    : DEFAULT_FUNCTION_URL;
+  return (typeof envUrl === "string" && envUrl.trim() !== "") ? envUrl.trim() : DIRECT_FUNCTION_URL;
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -36,6 +41,10 @@ export interface CallExecuteFullReviewOptions {
   apiKey?: string;
   previousAudit?: AuditResponse | null;
   expectedPlanId?: string;
+  /** step0_only: 仅 Step 0；levy|phase4|expenses: Call 2 单阶段（需 step0Output）；full: 完整审计（默认） */
+  mode?: "step0_only" | "levy" | "phase4" | "expenses" | "full";
+  /** Call 2 时必传：Step 0 输出，作为 LOCKED 上下文注入 */
+  step0Output?: AuditResponse | null;
 }
 
 /**
@@ -45,7 +54,14 @@ export interface CallExecuteFullReviewOptions {
 export async function callExecuteFullReview(
   options: CallExecuteFullReviewOptions
 ): Promise<AuditResponse> {
-  const { files, apiKey: apiKeyFromOptions, previousAudit, expectedPlanId } = options;
+  const {
+    files,
+    apiKey: apiKeyFromOptions,
+    previousAudit,
+    expectedPlanId,
+    mode = "full",
+    step0Output,
+  } = options;
   const user = auth.currentUser;
   if (!user) {
     throw new Error("请先登录后再执行审计。");
@@ -64,13 +80,25 @@ export async function callExecuteFullReview(
   );
 
   const url = getFunctionUrl();
+  const systemPrompt =
+    mode === "step0_only"
+      ? buildStep0Prompt()
+      : mode === "levy"
+        ? buildLevyPrompt()
+        : mode === "phase4"
+          ? buildPhase4Prompt()
+          : mode === "expenses"
+            ? buildExpensesPrompt()
+            : buildSystemPrompt();
+
   const body = {
     files: filesPayload,
     expectedPlanId,
     ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
-    systemPrompt: buildSystemPrompt(),
+    systemPrompt,
     fileManifest,
-    previousAudit: previousAudit ?? undefined,
+    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" ? step0Output : previousAudit) ?? undefined,
+    mode,
   };
 
   const res = await fetch(url, {
@@ -98,4 +126,4 @@ export async function callExecuteFullReview(
   return json;
 }
 
-export { getFunctionUrl, DEFAULT_FUNCTION_URL };
+export { getFunctionUrl, DIRECT_FUNCTION_URL };

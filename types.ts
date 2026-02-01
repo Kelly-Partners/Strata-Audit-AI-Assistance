@@ -6,6 +6,9 @@
 export type {
   DocumentEntry,
   IntakeSummary,
+  CoreDataPositions,
+  BsColumnMapping,
+  BsStructureItem,
   TraceableValue,
   LevyRecMaster,
   HighRiskDebtor,
