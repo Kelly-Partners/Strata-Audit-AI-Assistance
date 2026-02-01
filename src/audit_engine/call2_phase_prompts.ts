@@ -8,7 +8,7 @@ import { EVIDENCE_RULES_PROMPT } from "./kernel/20_evidence_rules";
 import { PHASE_2_RULES_PROMPT, PHASE_4_RULES_PROMPT } from "./rules";
 import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
 import { PHASE_4_ASSETS_PROMPT } from "./workflow/phase_4_assets";
-import { PHASE_3_EXPENSES_PROMPT } from "./workflow/phase_3_expenses";
+import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY } from "./workflow/phase_3_expenses";
 import { MODULE_50_OUTPUTS_PROMPT } from "../audit_outputs/output_registry";
 
 const LOCKED_CONTEXT_INSTRUCTION = `
@@ -31,11 +31,12 @@ You must return a JSON object with a single key "assets_and_cash" containing bal
 See MODULE 50 for the full assets_and_cash structure. Apply Phase 4 rules R1–R5 strictly. support_amount per R2–R5.
 `;
 
-/** Expenses-only output: return expense_samples */
+/** Expenses-only output: return expense_samples (Phase 3 v2 risk-based structure) */
 const EXPENSES_OUTPUT_SCHEMA = `
 --- OUTPUT: Return ONLY expense_samples ---
-You must return a JSON object with a single key "expense_samples" containing an array of sampled expense items.
-See MODULE 50 for the expense_samples structure. Sample from GL, verify against Invoices and Minutes.
+You must return a JSON object with a single key "expense_samples" containing an array of expense items.
+Each item MUST include: GL_ID, GL_Date, GL_Payee, GL_Amount, Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status.
+See MODULE 50 for the full expense_samples (Phase 3 v2) structure. Apply EXPENSE_RISK_FRAMEWORK: Target Sample List from Step A, then Step B (Three-Way Match) and Step C (Fund Integrity) per item.
 `;
 
 export function buildLevyPrompt(): string {
@@ -70,6 +71,8 @@ export function buildExpensesPrompt(): string {
     EVIDENCE_RULES_PROMPT +
     HIERARCHY_AFTER_EVIDENCE +
     LOCKED_CONTEXT_INSTRUCTION +
+    EXPENSE_RISK_FRAMEWORK +
+    PHASE_3_FUND_INTEGRITY +
     PHASE_3_EXPENSES_PROMPT +
     MODULE_50_OUTPUTS_PROMPT +
     EXPENSES_OUTPUT_SCHEMA

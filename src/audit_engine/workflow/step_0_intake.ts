@@ -40,10 +40,12 @@ Objective: Establish the single source of truth.
 
 4. If AGM Minutes or General Ledger has no file (empty row), FLAG as MISSING CRITICAL RECORD in intake_summary.
 
-5. GLOBAL SETTING – SP & FY (content recognition from minutes & financials):
+5. GLOBAL SETTING – SP, FY, MANAGER LIMIT & AGM LIMIT (content recognition from minutes & financials):
    - Extract **Strata Plan number** (e.g. SP 12345, Strata Plan 12345) from AGM Minutes, Committee Minutes, or Financial Statement. Populate intake_summary.strata_plan.
    - Extract **Financial Year** (FY) from the same documents. Anchor search in the section after "Audit Execution Report" and near the strata plan name. Format as DD/MM/YYYY - DD/MM/YYYY (e.g. 01/07/2024 - 30/06/2025) or DD/MM/YYYY for FY end. Populate intake_summary.financial_year.
-   - This FY becomes the **global audit period** for all phases (Revenue, Assets, Expense, Compliance). Phases will use intake_summary.financial_year for time-based logic.
+   - Extract **Manager spending limit** (single transaction, in dollars) from Strata Agency Agreement or Committee Minutes (e.g. Manager may approve up to $5,000). Populate intake_summary.manager_limit if found; else omit.
+   - Extract **AGM-approved limit** (amount above which General Meeting approval is required, in dollars) from AGM Minutes (e.g. Committee up to $20,000, above that AGM). Populate intake_summary.agm_limit if found; else omit.
+   - This FY becomes the **global audit period** for all phases (Revenue, Assets, Expense, Compliance). Phases will use intake_summary.financial_year and intake_summary.manager_limit / agm_limit for expense authority tiering.
 
 6. CORE DATA POSITIONS (MANDATORY for Step 0 – lock locations for Phase 2/4/3):
    - **balance_sheet**: Locate the Balance Sheet (within Financial Statement). Output doc_id (from document_register) and page_range (e.g. "Pages 5-7"). If FS has no distinct BS section, use the page(s) where BS appears.

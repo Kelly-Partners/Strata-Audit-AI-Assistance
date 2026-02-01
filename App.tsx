@@ -403,7 +403,10 @@ const App: React.FC = () => {
                 const currentFiles = activePlan?.files || [];
                 updatePlan(activePlanId, { files: [...currentFiles, ...newFiles] });
             } else {
-                setCreateDraft({ name: newFiles[0]?.name.split('.')[0] || "", files: newFiles });
+                setCreateDraft((d) => ({
+                  name: d.name || newFiles[0]?.name.split('.')[0] || "",
+                  files: [...(d.files || []), ...newFiles],
+                }));
                 setIsCreateModalOpen(true);
             }
         }

@@ -38,12 +38,59 @@ export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
   },
 };
 
+/** Patch A – MANDATORY column identification by DATE (not by label). Must run before filling Op_* / BS_*. */
+export const PHASE_2_COLUMN_DATE_MAP = `
+--- MANDATORY – COLUMN IDENTIFICATION BY DATE (DO NOT SKIP) ---
+Before filling Op_Arrears, Op_Advance, BS_Arrears, or BS_Advance, you MUST perform this step. Do NOT rely on column labels like "Prior Year" / "Current Year" / "2023" / "2024" alone – map by **reporting date**.
+
+**Step 1 – Derive FY dates from intake_summary.financial_year:**
+- Parse intake_summary.financial_year (e.g. "01/07/2024 - 30/06/2025" or "30/06/2025").
+- **Current FY end date** = last day of the audit FY (e.g. 30/06/2025).
+- **Prior FY end date** = last day of the year before the audit FY (e.g. 30/06/2024).
+
+**Step 2 – Identify the reporting date of EACH Balance Sheet column:**
+- From the Financial Statement Balance Sheet, read the column header or footnote for each numeric column (e.g. "As at 30 June 2025", "30 Jun 2024", "2024", "2023").
+- Resolve each to a single **reporting date** (the "as at" date for that column).
+- If the FS has two columns, you must determine: Column_A_Date = ? ; Column_B_Date = ?.
+
+**Step 3 – Map columns by date (not by left/right or label text):**
+- **PriorYearColumn** = the column whose reporting date equals **Prior FY end date** (e.g. 30/06/2024). Use this column ONLY for Op_Arrears and Op_Advance.
+- **CurrentYearColumn** = the column whose reporting date equals **Current FY end date** (e.g. 30/06/2025). Use this column ONLY for BS_Arrears and BS_Advance.
+
+**Step 4 – If you cannot map by date:**
+- If the BS has only one column, or you cannot determine which column corresponds to prior FY end vs current FY end, do NOT guess.
+- Do NOT fill Op_Arrears, Op_Advance, BS_Arrears, BS_Advance from an unmapped column.
+- Mark as Not Resolved – Boundary Defined (e.g. in note or completion_outputs.boundary_disclosure).
+
+**Key:** Use **date** to decide which column is Opening (Prior) and which is Closing (Current). Ignore whether the column is left or right; ignore label wording like "This Year" / "Last Year" – only the **as at date** counts.
+`;
+
 /** CRITICAL – Column mapping for Opening vs Closing (DO NOT SWAP). Injected before OPENING and CLOSING rule sets. */
 export const PHASE_2_LEVY_BALANCE_COLUMN_MAP = `
 --- CRITICAL – LEVY BALANCE COLUMN MAPPING (DO NOT SWAP) ---
-**Op_Arrears and Op_Advance** = Prior Year column ONLY (or standalone prior-year FS). Opening balances = start of audit FY.
-**BS_Arrears and BS_Advance** = Current Year column ONLY. Closing balances = end of audit FY.
-DO NOT put Prior Year figures into BS_Arrears/BS_Advance. DO NOT put Current Year figures into Op_Arrears/Op_Advance.
+Apply this mapping **after** you have identified PriorYearColumn and CurrentYearColumn by date (see COLUMN IDENTIFICATION BY DATE above).
+
+**MNEMONIC (记忆辅助):**
+- **Op_** = **Op**ening Balance (期初余额) → Prior Year column (上年度列)
+- **BS_** = **B**alance **S**heet Closing (期末余额) → Current Year column (本年度列)
+
+**STRICT MAPPING (严格映射 – 绝对不可颠倒):**
+1. **Op_Arrears** (Opening Arrears 期初欠费) = Prior Year column ONLY
+2. **Op_Advance** (Opening Advance 期初预付) = Prior Year column ONLY
+3. **BS_Arrears** (Closing Arrears 期末欠费) = Current Year column ONLY
+4. **BS_Advance** (Closing Advance 期末预付) = Current Year column ONLY
+
+**VERIFICATION CHECKPOINT (验证检查点):**
+Before outputting, verify:
+- Op_Arrears.note MUST mention "Prior Year" or "prior year closing"
+- Op_Advance.note MUST mention "Prior Year" or "prior year closing"
+- BS_Arrears.note MUST mention "Current Year" or "current year closing"
+- BS_Advance.note MUST mention "Current Year" or "current year closing"
+
+**PROHIBITED (严格禁止):**
+❌ DO NOT put Prior Year figures into BS_Arrears/BS_Advance
+❌ DO NOT put Current Year figures into Op_Arrears/Op_Advance
+❌ DO NOT swap Arrears and Advance amounts
 
 **Arrears vs Advance (identify by Dr/Cr):** Levies in Arrears = Debit (Dr) = asset (owners owe scheme). Levies in Advance = Credit (Cr) = liability (scheme owes future service). If a single "Levy Receivable" line shows Cr balance, treat as Advance. Do NOT swap Arrears and Advance amounts.
 `;
@@ -227,6 +274,8 @@ function formatPhase2RulesPrompt(): string {
       lines.push(`  Required evidence types: ${rule.requiredEvidenceTypes.join(", ")}.`);
     }
   }
+  lines.push("");
+  lines.push(PHASE_2_COLUMN_DATE_MAP);
   lines.push("");
   lines.push(PHASE_2_LEVY_BALANCE_COLUMN_MAP);
   lines.push("");

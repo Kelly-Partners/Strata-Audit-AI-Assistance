@@ -10,6 +10,7 @@ import {
   CoreDataPositions,
   BsColumnMapping,
   BsStructureItem,
+  ExpenseSample,
 } from '../types';
 
 /** Extract 1-based page number from various ref formats: "Page 3", "p.3", "pg 3", "3" */
@@ -186,7 +187,12 @@ const ForensicCell: React.FC<{
                 <div className="text-[14px] font-bold text-black bg-gray-50 border border-gray-200 p-3 break-words leading-snug">
                   {doc ? (
                     <span>
-                      {doc.Document_Origin_Name} <span className="text-[#C5A059] font-bold mx-1">&gt;</span> {val.page_ref}
+                      {[doc.Document_Origin_Name, ...(val.page_ref ? val.page_ref.split(/\s*[>›]\s*/).map(s => s.trim()).filter(Boolean) : [])].map((part, i) => (
+                        <React.Fragment key={i}>
+                          {i > 0 && <span className="text-[#C5A059] font-bold mx-1">&gt;</span>}
+                          {part}
+                        </React.Fragment>
+                      ))}
                     </span>
                   ) : (
                     val.source_doc_id === 'Calculated' ? 'System Calculation' : (val.source_doc_id || 'Unknown')
@@ -301,6 +307,188 @@ const ForensicCell: React.FC<{
     </>
   );
 };
+
+/** Payload for Expense Forensic popover: Source Doc, Doc ID, Extracted, Context/Note, View in PDF */
+interface ExpenseForensicPayload {
+  title: string;
+  source_doc_id: string;
+  page_ref: string;
+  note: string;
+  extracted_amount?: number;
+}
+
+/** Forensic popover for expense INV/PAY/AUTH/FUND – same layout as ForensicCell: Source Document, Doc ID, Extracted, Context/Note, View in PDF */
+const ExpenseForensicPopover: React.FC<{
+  payload: ExpenseForensicPayload;
+  docs: DocumentEntry[];
+  files: File[];
+  onClose: () => void;
+}> = ({ payload, docs, files, onClose }) => {
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const safeDocs = docs || [];
+  let doc = safeDocs.find(d => d.Document_ID === payload.source_doc_id);
+  if (!doc && payload.source_doc_id) {
+    doc = safeDocs.find(d => d.Document_Origin_Name === payload.source_doc_id || d.Document_Name === payload.source_doc_id);
+  }
+  const targetFile = doc ? files.find(f => f.name === doc!.Document_Origin_Name) : files.find(f => f.name === payload.source_doc_id);
+
+  const handleOpenPdf = () => {
+    if (!targetFile) {
+      alert("Original source file not found in current session. Please re-upload evidence to view.");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(targetFile);
+    const pageNum = extractPageNumber(payload.page_ref || payload.note || "");
+    const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
+    setPdfUrl(finalUrl);
+    setShowPdfModal(true);
+  };
+
+  useEffect(() => {
+    return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl.split('#')[0]); };
+  }, [pdfUrl]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') { setShowPdfModal(false); onClose(); } };
+    if (showPdfModal) document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showPdfModal, onClose]);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+        <div className="bg-white w-full max-w-md rounded shadow-2xl border-t-4 border-[#C5A059] overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="flex justify-between items-center bg-[#F9F9F9] px-6 py-4 border-b border-gray-100">
+            <span className="text-[13px] font-bold text-[#C5A059] uppercase tracking-widest flex items-center gap-2">
+              <span className="bg-[#C5A059] text-white rounded-sm w-4 h-4 flex items-center justify-center text-[10px]">🔍</span>
+              Forensic Trace – {payload.title}
+            </span>
+            <button onClick={onClose} className="text-gray-400 hover:text-black">✕</button>
+          </div>
+          <div className="p-5 space-y-4 max-h-[400px] overflow-y-auto">
+            <div>
+              <span className="text-[12px] uppercase text-gray-400 font-bold block mb-1 tracking-widest">Source Document</span>
+              <div className="text-[14px] font-bold text-black bg-gray-50 border border-gray-200 p-3 break-words">
+                {doc ? (
+                  <span>
+                    {[doc.Document_Origin_Name, ...(payload.page_ref ? payload.page_ref.split(/\s*[>›]\s*/).map(s => s.trim()).filter(Boolean) : [])].map((part, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && <span className="text-[#C5A059] font-bold mx-1">&gt;</span>}
+                        {part}
+                      </React.Fragment>
+                    ))}
+                  </span>
+                ) : (payload.source_doc_id || '–')}
+              </div>
+            </div>
+            <div>
+              <span className="text-[12px] uppercase text-gray-400 font-bold block mb-1 tracking-widest">Doc ID</span>
+              <div className="text-[13px] text-gray-600 bg-gray-100 px-2 py-1.5 border border-gray-200">{payload.source_doc_id || '–'}</div>
+            </div>
+            {(payload.extracted_amount != null && payload.extracted_amount !== 0) && (
+              <div>
+                <span className="text-[12px] uppercase text-gray-400 font-bold block mb-1 tracking-widest">Extracted</span>
+                <div className="text-[13px] text-black bg-yellow-50 px-2 py-1.5 border border-yellow-100 font-bold">
+                  {payload.extracted_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+            )}
+            <div>
+              <span className="text-[12px] uppercase text-gray-400 font-bold block mb-1 tracking-widest">Context / Note</span>
+              <div className="text-[13px] text-gray-600 italic">{payload.note || '–'}</div>
+            </div>
+            {targetFile && (
+              <div className="pt-2">
+                <button onClick={handleOpenPdf} className="w-full flex items-center justify-center gap-2 bg-black text-white hover:bg-[#C5A059] py-2 text-[12px] font-bold uppercase tracking-wider rounded-sm">
+                  View source document in PDF
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {showPdfModal && pdfUrl && (
+        <div className="fixed inset-0 z-[10001] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPdfModal(false)}>
+          <div className="bg-white w-full h-full rounded shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center bg-[#111] text-white px-6 py-4 border-b border-gray-800 shrink-0">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <span className="bg-[#C5A059] text-black text-xs font-bold px-2 py-1 rounded-sm uppercase">Evidence Preview</span>
+                <span className="font-bold truncate text-gray-300" title={targetFile?.name}>{doc ? doc.Document_Origin_Name : targetFile?.name}</span>
+                {payload.page_ref && <span className="text-[#C5A059] text-sm">/ {payload.page_ref}</span>}
+              </div>
+              <button onClick={() => setShowPdfModal(false)} className="text-gray-400 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2">✕</button>
+            </div>
+            <div className="flex-1 bg-gray-100 relative">
+              <iframe src={pdfUrl} className="w-full h-full absolute inset-0" title="Document Preview" />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+/** Build forensic payload from expense sample for a given pillar (INV/PAY/AUTH/FUND) */
+function buildExpenseForensicPayload(
+  item: ExpenseSample,
+  pillar: 'INV' | 'PAY' | 'AUTH' | 'FUND',
+  docs: DocumentEntry[]
+): ExpenseForensicPayload {
+  const inv = item.Three_Way_Match?.invoice;
+  const pay = item.Three_Way_Match?.payment;
+  const auth = item.Three_Way_Match?.authority;
+  const fund = item.Fund_Integrity;
+  const parseId = (id: string) => {
+    const parts = (id || '').split(/[/,|]/).map(s => s.trim());
+    return { docId: parts[0] || id, pageRef: parts[1] || '' };
+  };
+  switch (pillar) {
+    case 'INV': {
+      const ev = inv?.evidence;
+      const { docId, pageRef } = ev?.source_doc_id ? { docId: ev.source_doc_id, pageRef: ev.page_ref || '' } : parseId(inv?.id || '');
+      return {
+        title: 'Invoice',
+        source_doc_id: docId,
+        page_ref: pageRef,
+        note: ev?.note ?? (inv ? `Addressed to OC: ${inv.addressed_to_strata}; Payee match: ${inv.payee_match}; ABN valid: ${inv.abn_valid}. Ref: ${inv.id}` : '–'),
+        extracted_amount: ev?.extracted_amount,
+      };
+    }
+    case 'PAY': {
+      const ev = pay?.evidence;
+      const docId = ev?.source_doc_id ?? pay?.source_doc ?? pay?.creditors_ref ?? '–';
+      return {
+        title: 'Payment',
+        source_doc_id: docId,
+        page_ref: ev?.page_ref ?? '',
+        note: ev?.note ?? (pay ? `Status: ${pay.status}. ${pay.source_doc ? pay.source_doc : ''} ${pay.creditors_ref ? pay.creditors_ref : ''} ${pay.bank_date ? pay.bank_date : ''}`.trim() || '–' : '–'),
+        extracted_amount: ev?.extracted_amount ?? item.GL_Amount?.amount,
+      };
+    }
+    case 'AUTH': {
+      const ev = auth?.evidence;
+      const docId = ev?.source_doc_id ?? (auth?.minute_ref ? auth.minute_ref.split(/[,\s]/)[0] : '') ?? '–';
+      return {
+        title: 'Authority',
+        source_doc_id: docId,
+        page_ref: ev?.page_ref ?? '',
+        note: ev?.note ?? (auth ? `Required: ${auth.required_tier}; limit applied: $${auth.limit_applied}. ${auth.minute_ref ?? 'No minute ref.'}` : '–'),
+        extracted_amount: ev?.extracted_amount ?? auth?.limit_applied,
+      };
+    }
+    case 'FUND': {
+      const ev = fund?.evidence;
+      return {
+        title: 'Fund',
+        source_doc_id: ev?.source_doc_id ?? '–',
+        page_ref: ev?.page_ref ?? '',
+        note: fund?.note ?? ev?.note ?? (fund ? `GL: ${fund.gl_fund_code} | Inv: ${fund.invoice_nature}. Status: ${fund.classification_status}` : '–'),
+        extracted_amount: ev?.extracted_amount,
+      };
+    }
+  }
+}
 
 // New: Verification Matrix Modal (for Expenses)
 const VerificationMatrixModal: React.FC<{ steps: VerificationStep[]; onClose: () => void }> = ({ steps, onClose }) => {
@@ -509,6 +697,7 @@ const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ statu
 export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageItems, onTriage }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'levy' | 'assets' | 'expense' | 'compliance' | 'completion'>('docs');
   const [activeVerificationSteps, setActiveVerificationSteps] = useState<VerificationStep[] | null>(null);
+  const [expenseForensic, setExpenseForensic] = useState<{ pillar: 'INV' | 'PAY' | 'AUTH' | 'FUND'; rowIndex: number; item: ExpenseSample } | null>(null);
   
   // ROBUST DEFAULTING to prevent crashes if JSON is partial or undefined
   const safeData: Partial<AuditResponse> = data || {};
@@ -538,6 +727,14 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
          <VerificationMatrixModal 
             steps={activeVerificationSteps} 
             onClose={() => setActiveVerificationSteps(null)} 
+         />
+      )}
+      {expenseForensic && (
+         <ExpenseForensicPopover
+            payload={buildExpenseForensicPayload(expenseForensic.item, expenseForensic.pillar, docs)}
+            docs={docs}
+            files={files}
+            onClose={() => setExpenseForensic(null)}
          />
       )}
 
@@ -676,11 +873,17 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                       const loc = (safeData.core_data_positions as CoreDataPositions)[
                         key as keyof CoreDataPositions
                       ];
-                      const val = loc && typeof loc === 'object' && !Array.isArray(loc)
-                        ? 'page_ref' in loc
-                          ? `${loc.doc_id} › ${loc.page_ref}`
-                          : `${loc.doc_id} › ${loc.page_range}${loc.as_at_date ? ` (${loc.as_at_date})` : ''}`
-                        : '–';
+                      if (!loc || typeof loc !== 'object' || Array.isArray(loc)) {
+                        return (
+                          <div key={key} className="p-4 bg-gray-50 border border-gray-100 rounded">
+                            <div className="text-[11px] text-gray-500 uppercase font-bold tracking-widest mb-1">{label}</div>
+                            <div className="text-[13px] font-mono text-gray-800">–</div>
+                          </div>
+                        );
+                      }
+                      const originDoc = docs.find((d) => d.Document_ID === loc.doc_id);
+                      const originName = originDoc?.Document_Origin_Name || loc.doc_id;
+                      const pagePart = 'page_ref' in loc ? loc.page_ref : `${loc.page_range}${loc.as_at_date ? ` (${loc.as_at_date})` : ''}`;
                       return (
                         <div
                           key={key}
@@ -689,8 +892,14 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                           <div className="text-[11px] text-gray-500 uppercase font-bold tracking-widest mb-1">
                             {label}
                           </div>
-                          <div className="text-[13px] font-mono text-gray-800 break-words">
-                            {val}
+                          <div className="text-[13px] text-gray-800 break-words">
+                            <span>{originName}</span>
+                            {pagePart && (
+                              <>
+                                <span className="text-[#C5A059] font-bold mx-1">&gt;</span>
+                                <span>{pagePart}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -833,7 +1042,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                         <td></td>
                         <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.Op_Arrears} docs={docs} files={files} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-[13px]">
-                           {withAction('op_arr', 'Op Arrears', data.levy_reconciliation.master_table.Op_Arrears.note || '-')}
+                           {withAction('op_arr', 'Opening Arrears (Prior Year)', data.levy_reconciliation.master_table.Op_Arrears.note || '-')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
@@ -842,7 +1051,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                         <td></td>
                         <td className="px-5 py-3 text-red-700">(<ForensicCell val={data.levy_reconciliation.master_table.Op_Advance} docs={docs} files={files} />)</td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-[13px]">
-                           {withAction('op_adv', 'Op Advance', data.levy_reconciliation.master_table.Op_Advance.note || '-')}
+                           {withAction('op_adv', 'Opening Advance (Prior Year)', data.levy_reconciliation.master_table.Op_Advance.note || '-')}
                         </td>
                     </tr>
                     <tr className="border-b border-gray-100 group hover:bg-gray-50">
@@ -1091,7 +1300,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                         <td></td>
                         <td className="px-5 py-2 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.BS_Arrears} docs={docs} files={files} /></td>
                         <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-[13px]">
-                           {withAction('bs_arr', 'BS Arrears', data.levy_reconciliation.master_table.BS_Arrears.note || 'Asset')}
+                           {withAction('bs_arr', 'Closing Arrears (Current Year)', data.levy_reconciliation.master_table.BS_Arrears.note || 'Asset')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
@@ -1100,7 +1309,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                         <td></td>
                         <td className="px-5 py-2 text-red-700">(<ForensicCell val={data.levy_reconciliation.master_table.BS_Advance} docs={docs} files={files} />)</td>
                         <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-[13px]">
-                           {withAction('bs_adv', 'BS Advance', data.levy_reconciliation.master_table.BS_Advance.note || 'Liability (Credit)')}
+                           {withAction('bs_adv', 'Closing Advance (Current Year)', data.levy_reconciliation.master_table.BS_Advance.note || 'Liability (Credit)')}
                         </td>
                     </tr>
                     <tr className="border-t border-gray-200 group hover:bg-gray-50">
@@ -1228,25 +1437,96 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
             </div>
         )}
 
-        {/* EXPENSES */}
-        {activeTab === 'expense' && data.expense_samples && (
+        {/* EXPENSES – Phase 3 v2 (risk-based) or legacy */}
+        {activeTab === 'expense' && data.expense_samples && (() => {
+            const isV2 = data.expense_samples.some((s) => s.Risk_Profile && s.Three_Way_Match);
+            return (
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
                  <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
                     <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Table I.1: Expense Vouching Schedule</h3>
+                    {isV2 && <p className="text-xs text-gray-500 mt-1 uppercase tracking-wide">Risk-based sampling – Three-Way Match & Fund Integrity</p>}
                  </div>
                  <div className="overflow-x-auto">
                     <table className="min-w-full text-left border border-gray-200">
                         <thead className="bg-gray-100 text-black uppercase text-[15px] font-bold tracking-wider">
                             <tr>
+                                {isV2 && <th className="px-5 py-4 border-b border-gray-200">Risk</th>}
                                 <th className="px-5 py-4 border-b border-gray-200">GL Date / Payee</th>
                                 <th className="px-5 py-4 border-b border-gray-200">Amount</th>
-                                <th className="px-5 py-4 border-b border-gray-200">Invoice Validity</th>
-                                <th className="px-5 py-4 border-b border-gray-200">Classification Test</th>
-                                <th className="px-5 py-4 border-b border-gray-200">Authority Test</th>
+                                {isV2 ? (
+                                    <>
+                                        <th className="px-5 py-4 border-b border-gray-200 text-center" title="Invoice: payee, ABN, addressed to OC">📄 Inv</th>
+                                        <th className="px-5 py-4 border-b border-gray-200 text-center" title="Payment: PAID/ACCRUED/MISSING">🏦 Pay</th>
+                                        <th className="px-5 py-4 border-b border-gray-200 text-center" title="Authority: Manager/Committee/AGM">⚖️ Auth</th>
+                                        <th className="px-5 py-4 border-b border-gray-200">Fund</th>
+                                        <th className="px-5 py-4 border-b border-gray-200">Status</th>
+                                    </>
+                                ) : (
+                                    <>
+                                        <th className="px-5 py-4 border-b border-gray-200">Invoice Validity</th>
+                                        <th className="px-5 py-4 border-b border-gray-200">Classification Test</th>
+                                        <th className="px-5 py-4 border-b border-gray-200">Authority Test</th>
+                                    </>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-[15px]">
-                            {data.expense_samples.map((item, idx) => (
+                            {data.expense_samples.map((item, idx) => {
+                                if (isV2) {
+                                    const inv = item.Three_Way_Match?.invoice;
+                                    const pay = item.Three_Way_Match?.payment;
+                                    const auth = item.Three_Way_Match?.authority;
+                                    const fund = item.Fund_Integrity;
+                                    const isMisclassified = fund?.classification_status === 'MISCLASSIFIED';
+                                    return (
+                                        <tr key={idx} className={`hover:bg-gray-50 align-top transition-colors group ${isMisclassified ? 'bg-yellow-50' : ''}`}>
+                                            <td className="px-5 py-4 border-r border-gray-100">
+                                                {item.Risk_Profile ? (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {item.Risk_Profile.is_material && <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase bg-red-100 text-red-800 rounded">$5k+</span>}
+                                                        {(item.Risk_Profile.risk_keywords || []).slice(0, 3).map((k, i) => (
+                                                            <span key={i} className="px-1.5 py-0.5 text-[10px] font-bold uppercase bg-purple-100 text-purple-800 rounded">{k}</span>
+                                                        ))}
+                                                    </div>
+                                                ) : '–'}
+                                            </td>
+                                            <td className="px-5 py-4 border-r border-gray-100">
+                                                <div className="text-[14px] text-gray-500 mb-1">{item.GL_Date}</div>
+                                                <div className="font-bold text-gray-900">{item.GL_Payee}</div>
+                                            </td>
+                                            <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} /></td>
+                                            <td className="px-5 py-4 border-r border-gray-100 text-center">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'INV', rowIndex: idx, item })} className="border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                    {inv ? (inv.addressed_to_strata && inv.payee_match ? '✅' : '❌') : '–'}
+                                                </button>
+                                            </td>
+                                            <td className="px-5 py-4 border-r border-gray-100 text-center">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'PAY', rowIndex: idx, item })} className="border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                    {pay ? (pay.status === 'PAID' ? '✅' : pay.status === 'ACCRUED' ? '⏳' : '❌') : '–'}
+                                                </button>
+                                            </td>
+                                            <td className="px-5 py-4 border-r border-gray-100 text-center">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'AUTH', rowIndex: idx, item })} className="border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                    {auth ? (auth.status === 'AUTHORISED' ? '✅' : auth.status === 'MINUTES_NOT_AVAILABLE' || auth.status === 'NO_MINUTES_FOUND' ? '⚠️' : '❌') : '–'}
+                                                </button>
+                                            </td>
+                                            <td className="px-5 py-4 border-r border-gray-100">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'FUND', rowIndex: idx, item })} className="text-left w-full border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                    {fund ? (
+                                                        <>
+                                                            <span className={`px-2 py-0.5 text-[11px] font-bold uppercase ${fund.classification_status === 'MISCLASSIFIED' ? 'bg-yellow-200 text-yellow-900' : fund.classification_status === 'UNCERTAIN' ? 'bg-gray-200 text-gray-800' : 'bg-green-100 text-green-800'}`}>{fund.classification_status}</span>
+                                                            {isMisclassified && <div className="text-[11px] text-gray-600 mt-1">GL: {fund.gl_fund_code} | Inv: {fund.invoice_nature}</div>}
+                                                        </>
+                                                    ) : '–'}
+                                                </button>
+                                            </td>
+                                            <td className="px-5 py-4 relative">
+                                                {withAction(`exp_${idx}`, `${item.GL_Payee} ($${item.GL_Amount?.amount})`, <StatusBadge status={item.Overall_Status || '–'} />)}
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+                                return (
                                 <tr key={idx} className="hover:bg-gray-50 align-top transition-colors group">
                                     <td className="px-5 py-4 border-r border-gray-100">
                                         <div className="text-[14px] text-gray-500 mb-1">{item.GL_Date}</div>
@@ -1255,36 +1535,37 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                                     <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} /></td>
                                     <td className="px-5 py-4 border-r border-gray-100">
                                         <div className="flex flex-col gap-2">
-                                            <StatusBadge status={item.Invoice_Status} />
-                                            <div className="text-[12px] text-gray-400">{item.Source_Docs.Invoice_ID}</div>
+                                            <StatusBadge status={item.Invoice_Status ?? '–'} />
+                                            <div className="text-[12px] text-gray-400">{item.Source_Docs?.Invoice_ID ?? '–'}</div>
                                         </div>
                                     </td>
                                     <td className="px-5 py-4 border-r border-gray-100">
                                          <div className="flex flex-col gap-1">
-                                            <div className="text-[14px] text-gray-500">Code: <span className="text-black font-medium">{item.GL_Fund_Code}</span></div>
-                                            <div className="text-[14px] italic text-gray-600 mb-1">"{item.Inv_Desc}"</div>
-                                            <StatusBadge status={item.Class_Result} />
+                                            <div className="text-[14px] text-gray-500">Code: <span className="text-black font-medium">{item.GL_Fund_Code ?? '–'}</span></div>
+                                            <div className="text-[14px] italic text-gray-600 mb-1">"{item.Inv_Desc ?? ''}"</div>
+                                            <StatusBadge status={item.Class_Result ?? '–'} />
                                          </div>
                                     </td>
                                     <td className="px-5 py-4 relative">
-                                         {/* Wrap content in withAction for expenses */}
-                                         {withAction(`exp_${idx}`, `${item.GL_Payee} ($${item.GL_Amount.amount})`, (
+                                         {withAction(`exp_${idx}`, `${item.GL_Payee} ($${item.GL_Amount?.amount})`, (
                                              <div className="flex flex-col gap-1">
-                                                <div className="text-[14px] text-gray-500">Limit: ${item.Manager_Limit}</div>
+                                                <div className="text-[14px] text-gray-500">Limit: ${item.Manager_Limit ?? '–'}</div>
                                                 <StatusBadge 
-                                                  status={item.Auth_Result} 
+                                                  status={item.Auth_Result ?? '–'} 
                                                   onClick={() => item.verification_steps && setActiveVerificationSteps(item.verification_steps)}
                                                 />
                                              </div>
                                          ))}
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                  </div>
             </div>
-        )}
+            );
+        })()}
 
         {/* COMPLIANCE (NEW TABLE F.MASTER) */}
         {activeTab === 'compliance' && data.statutory_compliance && (

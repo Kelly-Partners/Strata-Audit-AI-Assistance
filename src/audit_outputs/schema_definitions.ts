@@ -36,12 +36,16 @@ export const IntakeSummarySchema = z.object({
   status: z.string(),
   strata_plan: z.string().optional(),
   financial_year: z.string().optional(),
+  manager_limit: z.number().optional(),
+  agm_limit: z.number().optional(),
 });
 
 export const LevyRecMasterSchema = z.object({
   Source_Doc_ID: z.string(),
   AGM_Date: z.string(),
+  /** OPENING – Prior Year BS. note MUST contain "Prior Year" or "prior year closing". */
   Op_Arrears: TraceableValueSchema,
+  /** OPENING – Prior Year BS. note MUST contain "Prior Year" or "prior year closing". */
   Op_Advance: TraceableValueSchema,
   Net_Opening_Bal: TraceableValueSchema,
   Old_Levy_Admin: TraceableValueSchema,
@@ -74,7 +78,9 @@ export const LevyRecMasterSchema = z.object({
   Non_Levy_Income: TraceableValueSchema.optional(),
   Effective_Levy_Receipts: TraceableValueSchema,
   Calc_Closing: TraceableValueSchema,
+  /** CLOSING – Current Year BS. note MUST contain "Current Year" or "current year closing". */
   BS_Arrears: TraceableValueSchema,
+  /** CLOSING – Current Year BS. note MUST contain "Current Year" or "current year closing". */
   BS_Advance: TraceableValueSchema,
   BS_Closing: TraceableValueSchema,
   Levy_Variance: TraceableValueSchema,
@@ -100,19 +106,77 @@ const VerificationStepSchema = z.object({
   evidence_ref: z.string(),
 });
 
+/** Phase 3 v2: Risk-based expense selection */
+const ExpenseRiskProfileSchema = z.object({
+  is_material: z.boolean(),
+  risk_keywords: z.array(z.string()),
+  is_split_invoice: z.boolean(),
+  selection_reason: z.string(),
+});
+
+/** Phase 3 v2: Forensic evidence ref for expense pillars */
+const ExpenseEvidenceRefSchema = z.object({
+  source_doc_id: z.string().optional(),
+  page_ref: z.string().optional(),
+  note: z.string().optional(),
+  extracted_amount: z.number().optional(),
+});
+
+/** Phase 3 v2: Three-way match */
+const ThreeWayMatchSchema = z.object({
+  invoice: z.object({
+    id: z.string(),
+    date: z.string(),
+    payee_match: z.boolean(),
+    abn_valid: z.boolean(),
+    addressed_to_strata: z.boolean(),
+    evidence: ExpenseEvidenceRefSchema.optional(),
+  }),
+  payment: z.object({
+    status: z.enum(["PAID", "ACCRUED", "MISSING", "BANK_STMT_MISSING"]),
+    bank_date: z.string().optional(),
+    amount_match: z.boolean(),
+    source_doc: z.string().optional(),
+    creditors_ref: z.string().optional(),
+    evidence: ExpenseEvidenceRefSchema.optional(),
+  }),
+  authority: z.object({
+    required_tier: z.enum(["MANAGER", "COMMITTEE", "GENERAL_MEETING"]),
+    limit_applied: z.number(),
+    minute_ref: z.string().optional(),
+    status: z.enum(["AUTHORISED", "UNAUTHORISED", "NO_MINUTES_FOUND", "MINUTES_NOT_AVAILABLE"]),
+    evidence: ExpenseEvidenceRefSchema.optional(),
+  }),
+});
+
+/** Phase 3 v2: Fund classification (Admin vs Capital) */
+const FundIntegritySchema = z.object({
+  gl_fund_code: z.string(),
+  invoice_nature: z.string(),
+  classification_status: z.enum(["CORRECT", "MISCLASSIFIED", "UNCERTAIN"]),
+  note: z.string().optional(),
+  evidence: ExpenseEvidenceRefSchema.optional(),
+});
+
+/** Phase 3 v2: Audit Evidence Package. New fields optional for backward compat with old expense_samples. */
 const ExpenseSampleSchema = z.object({
+  GL_ID: z.string().optional(),
   GL_Date: z.string(),
   GL_Payee: z.string(),
   GL_Amount: TraceableValueSchema,
-  GL_Fund_Code: z.string(),
-  Source_Docs: z.object({ GL_ID: z.string(), Invoice_ID: z.string(), Minute_ID: z.string().optional() }),
-  Doc_Status: z.string(),
-  Invoice_Status: z.string(),
-  Inv_Desc: z.string(),
-  Class_Result: z.string(),
-  Manager_Limit: z.number(),
-  Minute_Ref: z.string(),
-  Auth_Result: z.string(),
+  Risk_Profile: ExpenseRiskProfileSchema.optional(),
+  Three_Way_Match: ThreeWayMatchSchema.optional(),
+  Fund_Integrity: FundIntegritySchema.optional(),
+  Overall_Status: z.enum(["PASS", "FAIL", "RISK_FLAG"]).optional(),
+  GL_Fund_Code: z.string().optional(),
+  Source_Docs: z.object({ GL_ID: z.string(), Invoice_ID: z.string(), Minute_ID: z.string().optional() }).optional(),
+  Doc_Status: z.string().optional(),
+  Invoice_Status: z.string().optional(),
+  Inv_Desc: z.string().optional(),
+  Class_Result: z.string().optional(),
+  Manager_Limit: z.number().optional(),
+  Minute_Ref: z.string().optional(),
+  Auth_Result: z.string().optional(),
   verification_steps: z.array(VerificationStepSchema).optional(),
 });
 

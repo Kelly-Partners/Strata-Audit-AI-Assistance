@@ -9,12 +9,14 @@ You must strictly return a single JSON object matching the schema below.
 Ensure "document_register" and "intake_summary" are fully populated based on the uploaded files.
 **document_register**: Must be a list. Each Document Type (AGM Minutes, Committee Minutes, General Ledger, Financial Statement, Bank Statement, Tax Invoice, Invoice, Levy Position Report, Insurance Policy, Valuation Report, Other) MUST appear at least one row; if no file for that type, output one row with Document_Origin_Name "" or "N/A". One row per recognized file when a type has files.
 
-**GLOBAL SETTING – SP & FY (extract during document dictionary recognition):** From minutes and financials content, extract: (1) **strata_plan** – Strata Plan number (e.g. SP 12345); (2) **financial_year** – FY in DD/MM/YYYY - DD/MM/YYYY or DD/MM/YYYY. Populate intake_summary.strata_plan and intake_summary.financial_year. This FY is the **global audit period** for all phases.
+**GLOBAL SETTING – SP, FY, MANAGER LIMIT & AGM LIMIT (extract during document dictionary recognition):** From minutes and financials content, extract: (1) **strata_plan** – Strata Plan number (e.g. SP 12345); (2) **financial_year** – FY in DD/MM/YYYY - DD/MM/YYYY or DD/MM/YYYY; (3) **manager_limit** – Manager single-transaction limit in dollars (from Agency Agreement or Committee Minutes); (4) **agm_limit** – Amount above which General Meeting approval required (from AGM Minutes). Populate intake_summary. This FY and limits are used by Phase 3 (Expense) for authority tiering.
 
 **CRITICAL INSTRUCTION FOR TRACEABILITY:**
 1. "verbatim_quote": For every extracted figure, you MUST provide the exact text substring from the PDF where this figure was found.
 2. "computation": For every CALCULATED figure, you MUST provide the formula logic (method and expression) and in "note" the calculation content (e.g. which numbers were used).
-3. "verification_steps": For expenses, provide the step-by-step adjudication logic.
+3. "verification_steps": For expenses (legacy), provide the step-by-step adjudication logic.
+
+**EXPENSE_SAMPLES (PHASE 3 v2 – RISK-BASED):** Execute EXPENSE_RISK_FRAMEWORK. First scan the General Ledger and build a Target Sample List from Step A (Materiality >$5k, Keywords: Legal/Solicitor/Consultant/Reimbursement/Emergency/Roof/Lift/Defect, Anomaly: generic descriptions >$1k). Then for each Target execute Step B (Three-Way Match: Invoice validity including addressed_to_strata, Payment PAID/ACCRUED/MISSING, Authority MANAGER/COMMITTEE/GENERAL_MEETING with minute_ref) and Step C (Fund Integrity: Admin vs Capital). Use intake_summary.manager_limit and intake_summary.agm_limit when available. Output each item with GL_ID, GL_Date, GL_Payee, GL_Amount, Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status (PASS/FAIL/RISK_FLAG). Explicitly distinguish PAID (found in bank) vs ACCRUED (found in creditors). Fail Authority if Committee/AGM required but no minute_ref found. **Forensic traceability (optional):** For each of invoice, payment, authority and Fund_Integrity you may output an optional "evidence" object with "source_doc_id", "page_ref", "note" (what test was performed and why this rating), and optionally "extracted_amount". This powers the clickable ✅/❌ forensic popover (Source Document, Doc ID, Context/Note, View in PDF).
 
 **LEVY MASTER TABLE – SYMBOL MAP:** (A) = Net_Opening_Bal; (B1) = Sub_Levies_Standard_Admin / Sub_Levies_Standard_Sink / Sub_Levies_Standard; (B) = Sub_Admin_Net / Sub_Sink_Net / Total_Levies_Net; (C) = Total_GST_Raised; (D) = Total_Gross_Inc = **period-only** gross (levies + GST raised in the period); (E) = Effective_Levy_Receipts; (=) = Calc_Closing. In reconciliation: (A) and (D) are added in the closing row: (=) = A + D - E. Do NOT include (A) in the (D) cell; (D) = (B) + (C) only.
 
@@ -52,7 +54,7 @@ Ensure "document_register" and "intake_summary" are fully populated based on the
 
 **MANDATORY – OLD RATE LEVIES / NEW RATE LEVIES (Phase 2 rules levy_old_new_levies_source, levy_old_new_rate, levy_financial_year):** Source ONLY from minutes. You MUST time-apportion Old Rate Levies and New Rate Levies by the strata plan’s financial year. First, determine the plan’s financial year (start and end dates) from minutes; anchor your search in the section that appears after the title "Audit Execution Report" and near the strata plan name (e.g. scheme name, address, or plan number), and write to intake_summary.financial_year. Use intake_summary.financial_year (or the FY you extracted) for all phases. Use that FY to define quarters. Then split levies between Old Rate and New Rate by the date the new rate was adopted (from minutes). For each quarter (or part-quarter) in the FY, assign levy to Old or New by proportion (e.g. days or months in that quarter at old rate vs new rate). For every Old_Levy_* and New_Levy_* figure, you MUST fill "note" and, if calculated, "computation" explaining: FY used (source: minutes), quarter boundaries, minutes date for rate change, and the proportion applied (e.g. "Q1 100% old; Q2 60% old 40% new; FY from Report header"). source_doc_id and page_ref must cite minutes only.
 
-**Field source mapping (levy_reconciliation.master_table – DO NOT SWAP):** Op_Arrears, Op_Advance = Prior Year Balance Sheet column. BS_Arrears, BS_Advance = Current Year Balance Sheet column. Arrears = Dr (asset); Advance = Cr (liability).
+**Field source mapping (levy_reconciliation.master_table – DO NOT SWAP):** Op_Arrears, Op_Advance = Prior Year Balance Sheet column (OPENING = start of FY). BS_Arrears, BS_Advance = Current Year Balance Sheet column (CLOSING = end of FY). For Op_* the "note" MUST contain "Prior Year" or "prior year closing"; for BS_* the "note" MUST contain "Current Year" or "current year closing" (see VERIFICATION CHECKPOINT in Phase 2 rules). Arrears = Dr (asset); Advance = Cr (liability).
 
 JSON SCHEMA:
 {
@@ -73,14 +75,16 @@ JSON SCHEMA:
     "missing_critical_types": ["String"],
     "status": "String",
     "strata_plan": "String (e.g. SP 12345)",
-    "financial_year": "String (e.g. 01/07/2024 - 30/06/2025 or DD/MM/YYYY)"
+    "financial_year": "String (e.g. 01/07/2024 - 30/06/2025 or DD/MM/YYYY)",
+    "manager_limit": "Number (optional – from Agency Agreement / Minutes)",
+    "agm_limit": "Number (optional – from AGM Minutes)"
   },
   "levy_reconciliation": {
     "master_table": {
        "Source_Doc_ID": "String",
        "AGM_Date": "String",
-       "Op_Arrears": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
-       "Op_Advance": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
+       "Op_Arrears": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String (MUST contain 'Prior Year' or 'prior year closing')", "verbatim_quote": "String" },
+       "Op_Advance": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String (MUST contain 'Prior Year' or 'prior year closing')", "verbatim_quote": "String" },
        "Net_Opening_Bal": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "computation": { "method": "String", "expression": "String" } },
        "Old_Levy_Admin": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
        "Old_Levy_Sink": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
@@ -111,8 +115,8 @@ JSON SCHEMA:
        "Total_Receipts_Global": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "computation": { "method": "String", "expression": "String" } },
        "Effective_Levy_Receipts": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "computation": { "method": "String", "expression": "String" } },
        "Calc_Closing": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "computation": { "method": "String", "expression": "String" } },
-       "BS_Arrears": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
-       "BS_Advance": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
+       "BS_Arrears": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String (MUST contain 'Current Year' or 'current year closing')", "verbatim_quote": "String" },
+       "BS_Advance": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String (MUST contain 'Current Year' or 'current year closing')", "verbatim_quote": "String" },
        "BS_Closing": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "verbatim_quote": "String" },
        "Levy_Variance": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "note": "String", "computation": { "method": "String", "expression": "String" } }
     },
@@ -125,19 +129,18 @@ JSON SCHEMA:
   },
   "expense_samples": [
     {
+      "GL_ID": "String (unique ref)",
       "GL_Date": "String",
       "GL_Payee": "String",
       "GL_Amount": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "verbatim_quote": "String" },
-      "GL_Fund_Code": "String",
-      "Source_Docs": { "GL_ID": "String", "Invoice_ID": "String" },
-      "Doc_Status": "FOUND/MISSING",
-      "Invoice_Status": "String",
-      "Inv_Desc": "String",
-      "Class_Result": "String",
-      "Manager_Limit": Number,
-      "Minute_Ref": "String",
-      "Auth_Result": "String",
-      "verification_steps": [ { "rule": "String", "status": "PASS/FAIL", "evidence_ref": "String" } ]
+      "Risk_Profile": { "is_material": Boolean, "risk_keywords": ["String"], "is_split_invoice": Boolean, "selection_reason": "String" },
+      "Three_Way_Match": {
+        "invoice": { "id": "String", "date": "String", "payee_match": Boolean, "abn_valid": Boolean, "addressed_to_strata": Boolean, "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } },
+        "payment": { "status": "PAID|ACCRUED|MISSING|BANK_STMT_MISSING", "bank_date": "String", "amount_match": Boolean, "source_doc": "String", "creditors_ref": "String", "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } },
+        "authority": { "required_tier": "MANAGER|COMMITTEE|GENERAL_MEETING", "limit_applied": Number, "minute_ref": "String", "status": "AUTHORISED|UNAUTHORISED|NO_MINUTES_FOUND|MINUTES_NOT_AVAILABLE", "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } }
+      },
+      "Fund_Integrity": { "gl_fund_code": "String", "invoice_nature": "String", "classification_status": "CORRECT|MISCLASSIFIED|UNCERTAIN", "note": "String", "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } },
+      "Overall_Status": "PASS|FAIL|RISK_FLAG"
     }
   ],
   "statutory_compliance": {

@@ -22,6 +22,10 @@ export interface IntakeSummary {
   strata_plan?: string;
   /** Financial Year – extracted from minutes/financials (format DD/MM/YYYY - DD/MM/YYYY or DD/MM/YYYY); used as global FY for all phases */
   financial_year?: string;
+  /** Manager spending limit (single transaction) – from Strata Agency Agreement or Committee Minutes; used for Phase 3 Authority Tier 1 */
+  manager_limit?: number;
+  /** AGM-approved limit above which General Meeting approval required – from AGM Minutes; used for Phase 3 Authority Tier 2/3 */
+  agm_limit?: number;
 }
 
 /** Step 0: Location lock for a document */
@@ -74,7 +78,9 @@ export interface TraceableValue {
 export interface LevyRecMaster {
   Source_Doc_ID: string;
   AGM_Date: string;
+  /** OPENING BALANCE – Levies in Arrears at START of FY (from Prior Year BS closing). note MUST mention "Prior Year" or "prior year closing". */
   Op_Arrears: TraceableValue;
+  /** OPENING BALANCE – Levies in Advance at START of FY (from Prior Year BS closing). note MUST mention "Prior Year" or "prior year closing". */
   Op_Advance: TraceableValue;
   Net_Opening_Bal: TraceableValue;
   Old_Levy_Admin: TraceableValue;
@@ -111,7 +117,9 @@ export interface LevyRecMaster {
   Non_Levy_Income?: TraceableValue;
   Effective_Levy_Receipts: TraceableValue;
   Calc_Closing: TraceableValue;
+  /** CLOSING BALANCE – Levies in Arrears at END of FY (from Current Year BS closing). note MUST mention "Current Year" or "current year closing". */
   BS_Arrears: TraceableValue;
+  /** CLOSING BALANCE – Levies in Advance at END of FY (from Current Year BS closing). note MUST mention "Current Year" or "current year closing". */
   BS_Advance: TraceableValue;
   BS_Closing: TraceableValue;
   Levy_Variance: TraceableValue;
@@ -158,19 +166,84 @@ export interface VerificationStep {
   evidence_ref: string;
 }
 
+/** Phase 3 v2: Risk-based expense – why this item was selected */
+export interface ExpenseRiskProfile {
+  is_material: boolean;
+  risk_keywords: string[];
+  is_split_invoice: boolean;
+  selection_reason: string;
+}
+
+/** Optional forensic evidence for expense pillars (Source Doc, Doc ID, Context/Note, View in PDF). */
+export interface ExpenseEvidenceRef {
+  source_doc_id?: string;
+  page_ref?: string;
+  /** Context / Note: what test was performed and why this rating. */
+  note?: string;
+  extracted_amount?: number;
+}
+
+/** Phase 3 v2: Three-way match (Invoice / Payment / Authority) */
+export interface ThreeWayMatch {
+  invoice: {
+    id: string;
+    date: string;
+    payee_match: boolean;
+    abn_valid: boolean;
+    addressed_to_strata: boolean;
+    /** Forensic: Doc ID / page and context for Evidence Chain popover. */
+    evidence?: ExpenseEvidenceRef;
+  };
+  payment: {
+    status: "PAID" | "ACCRUED" | "MISSING" | "BANK_STMT_MISSING";
+    bank_date?: string;
+    amount_match: boolean;
+    source_doc?: string;
+    creditors_ref?: string;
+    /** Forensic: page_ref and context for Evidence Chain popover. source_doc used as Doc ID when evidence not set. */
+    evidence?: ExpenseEvidenceRef;
+  };
+  authority: {
+    required_tier: "MANAGER" | "COMMITTEE" | "GENERAL_MEETING";
+    limit_applied: number;
+    minute_ref?: string;
+    status: "AUTHORISED" | "UNAUTHORISED" | "NO_MINUTES_FOUND" | "MINUTES_NOT_AVAILABLE";
+    /** Forensic: Doc ID / page and context for Evidence Chain popover. */
+    evidence?: ExpenseEvidenceRef;
+  };
+}
+
+/** Phase 3 v2: Admin vs Capital fund classification */
+export interface FundIntegrity {
+  gl_fund_code: string;
+  invoice_nature: string;
+  classification_status: "CORRECT" | "MISCLASSIFIED" | "UNCERTAIN";
+  note?: string;
+  /** Forensic: Doc ID / page for Evidence Chain popover (e.g. GL or invoice doc). */
+  evidence?: ExpenseEvidenceRef;
+}
+
+/** Phase 3 v2: Audit Evidence Package (risk-based sampling + three-way match + fund integrity). New fields optional for backward compat with old expense_samples. */
 export interface ExpenseSample {
+  GL_ID?: string;
   GL_Date: string;
   GL_Payee: string;
   GL_Amount: TraceableValue;
-  GL_Fund_Code: string;
-  Source_Docs: { GL_ID: string; Invoice_ID: string; Minute_ID?: string };
-  Doc_Status: string;
-  Invoice_Status: string;
-  Inv_Desc: string;
-  Class_Result: string;
-  Manager_Limit: number;
-  Minute_Ref: string;
-  Auth_Result: string;
+  /** Present when using Phase 3 v2 (risk-based) flow */
+  Risk_Profile?: ExpenseRiskProfile;
+  Three_Way_Match?: ThreeWayMatch;
+  Fund_Integrity?: FundIntegrity;
+  Overall_Status?: "PASS" | "FAIL" | "RISK_FLAG";
+  /** Legacy – present when using old expense flow */
+  GL_Fund_Code?: string;
+  Source_Docs?: { GL_ID: string; Invoice_ID: string; Minute_ID?: string };
+  Doc_Status?: string;
+  Invoice_Status?: string;
+  Inv_Desc?: string;
+  Class_Result?: string;
+  Manager_Limit?: number;
+  Minute_Ref?: string;
+  Auth_Result?: string;
   verification_steps?: VerificationStep[];
 }
 
