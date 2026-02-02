@@ -36,13 +36,13 @@ Ensure "document_register" and "intake_summary" are fully populated based on the
 - **Levy_Variance** = Calc_Closing - CurrentYear_Net.
 
 **ASSETS_AND_CASH (PHASE 4 – FULL BALANCE SHEET VERIFICATION – MANDATORY rule enforcement):**
-- **CRITICAL – bs_amount & line_item SOURCE:** MUST be looked up from LOCKED Step 0 bs_extract ONLY. Do NOT re-read the Balance Sheet PDF. For each row in bs_extract.rows, output one balance_sheet_verification row. bs_amount = current_year (or prior_year for RULE 1 "Owners Funds at Start" only). **PROHIBITED:** Do NOT use GL, Levy Report, or any non-bs_extract source for bs_amount or line_item. **supporting_amount** = verification evidence from R2–R5 (Bank Stmt, Levy Report, breakdown, GL) – NOT from Balance Sheet.
+- **CRITICAL – bs_amount & line_item SOURCE:** MUST be looked up from LOCKED bs_extract ONLY (from FS Balance Sheet at Step 0). Match by (line_item, fund, section). bs_amount = current_year; RULE 1: bs_amount = current_year (opening), supporting_amount = prior_year (roll-forward). When evidence missing: supporting_amount = null (do NOT use 0). **PROHIBITED:** Do NOT use GL or non-bs_extract for bs_amount. **PROHIBITED (Receivable):** If current_year blank, output 0; do NOT substitute with prior_year.
 - **year_column:** Use bs_extract.current_year_label (or prior_year_label for RULE 1 only).
 - **note:** "BS: From bs_extract current_year" (or "prior_year for roll-forward" for RULE 1).
 - **AUDIT PERIOD ANCHOR (global – intake_summary.financial_year):** Use CURRENT YEAR column for all amounts. Prior Year column ONLY for RULE 1 roll-forward.
 - **CRITICAL – CURRENT YEAR ONLY:** Do NOT extract from Prior Year column except RULE 1.
 - **balance_sheet_verification**: MANDATORY array. You MUST apply Phase 4 rules (R1–R5) strictly per line type.
-  - **Cash at Bank, Term Deposits (RULE 2):** supporting_amount MUST come from Bank Statement / Term Deposit Statement (Tier 1) ONLY. Do NOT use GL. If no Tier 1 → status = "MISSING_BANK_STMT"; do NOT fill supporting_amount from GL.
+  - **Cash at Bank, Term Deposits (RULE 2):** supporting_amount from Bank Statement (Tier 1) ONLY. If no Tier 1 → status = "MISSING_BANK_STMT"; supporting_amount = null.
   - **Levy Arrears, Levies in Advance (RULE 3):** supporting_amount from Tier 2 Levy Position Report. If only GL → status = "TIER_3_ONLY".
   - **Accrued/Prepaid/Creditors (RULE 4):** supporting_amount from Tier 2 breakdown report. If only GL → status = "MISSING_BREAKDOWN".
   - **Other (RULE 5):** supporting_amount from GL.
@@ -129,7 +129,7 @@ JSON SCHEMA:
   },
   "assets_and_cash": {
     "balance_sheet_verification": [
-      { "line_item": "String", "section": "OWNERS_EQUITY|ASSETS|LIABILITIES", "fund": "Admin|Capital|N/A", "bs_amount": Number, "year_column": "String (MANDATORY)", "supporting_amount": Number, "evidence_ref": "Doc_ID/Page", "status": "VERIFIED|VARIANCE|MISSING_BANK_STMT|TIER_3_ONLY|MISSING_LEVY_REPORT|MISSING_BREAKDOWN|NO_SUPPORT|GL_SUPPORTED_ONLY|SUBTOTAL_CHECK_ONLY", "note": "bs_amount from bs_extract (e.g. 'From bs_extract current_year')", "supporting_note": "supporting_amount source ONLY – e.g. 'Matches Bank Statement p.2' (do NOT include 'From BS column')" }
+      { "line_item": "String", "section": "OWNERS_EQUITY|ASSETS|LIABILITIES", "fund": "Admin|Capital|N/A", "bs_amount": Number, "year_column": "String", "supporting_amount": "Number or null (null when evidence missing)", "evidence_ref": "Doc_ID/Page", "status": "VERIFIED|VARIANCE|MISSING_BANK_STMT|TIER_3_ONLY|MISSING_LEVY_REPORT|MISSING_BREAKDOWN|NO_SUPPORT|GL_SUPPORTED_ONLY|SUBTOTAL_CHECK_ONLY", "note": "bs_amount from bs_extract (e.g. 'From bs_extract current_year')", "supporting_note": "supporting_amount source ONLY – e.g. 'Matches Bank Statement p.2' (do NOT include 'From BS column')" }
     ]
   },
   "expense_samples": [

@@ -10,6 +10,7 @@ import {
   buildLevyPrompt,
   buildPhase4Prompt,
   buildExpensesPrompt,
+  buildPhase5Prompt,
 } from "../audit_engine";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
 import { auth } from "./firebase";
@@ -41,8 +42,8 @@ export interface CallExecuteFullReviewOptions {
   apiKey?: string;
   previousAudit?: AuditResponse | null;
   expectedPlanId?: string;
-  /** step0_only: 仅 Step 0；levy|phase4|expenses: Call 2 单阶段（需 step0Output）；full: 完整审计（默认） */
-  mode?: "step0_only" | "levy" | "phase4" | "expenses" | "full";
+  /** step0_only: 仅 Step 0；levy|phase4|expenses|compliance: Call 2 单阶段（需 step0Output）；full: 完整审计（默认） */
+  mode?: "step0_only" | "levy" | "phase4" | "expenses" | "compliance" | "full";
   /** Call 2 时必传：Step 0 输出，作为 LOCKED 上下文注入 */
   step0Output?: AuditResponse | null;
 }
@@ -89,7 +90,9 @@ export async function callExecuteFullReview(
           ? buildPhase4Prompt()
           : mode === "expenses"
             ? buildExpensesPrompt()
-            : buildSystemPrompt();
+            : mode === "compliance"
+              ? buildPhase5Prompt()
+              : buildSystemPrompt();
 
   const body = {
     files: filesPayload,
@@ -97,7 +100,7 @@ export async function callExecuteFullReview(
     ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
     systemPrompt,
     fileManifest,
-    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" ? step0Output : previousAudit) ?? undefined,
+    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "compliance" ? step0Output : previousAudit) ?? undefined,
     mode,
   };
 

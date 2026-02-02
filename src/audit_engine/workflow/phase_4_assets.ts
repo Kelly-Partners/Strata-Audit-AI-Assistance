@@ -14,9 +14,9 @@ MANDATORY: You MUST apply GATE 2 logic (Phase 4 Rules R1–R5) strictly per line
 SECTION A – LOCKED EXTRACTION RULES (DO NOT VIOLATE)
 ────────────────────────────────────────
 
-CRITICAL – bs_amount & line_item SOURCE (LOCKED bs_extract):
-- bs_amount and line_item MUST be looked up from LOCKED Step 0 bs_extract ONLY. Do NOT re-read the Balance Sheet PDF.
-- For each row in balance_sheet_verification: find the matching row in bs_extract.rows (by line_item). Use current_year for bs_amount (except RULE 1).
+CRITICAL – bs_amount & line_item SOURCE (bs_extract ONLY):
+- bs_amount and line_item MUST be looked up from LOCKED bs_extract ONLY (extracted from FS Balance Sheet at Step 0). Do NOT re-read the Balance Sheet PDF.
+- Match bs_extract.rows by (line_item + fund + section) – all three must match to avoid wrong row (same line_item in different funds/sections).
 
 PROHIBITED:
 - Do NOT use General Ledger, Levy Reports, Bank Statements, or any non-bs_extract source for bs_amount or line_item.
@@ -35,17 +35,18 @@ SECTION B – bs_amount FROM bs_extract (MANDATORY)
 ────────────────────────────────────────
 
 For EVERY output row:
-1. Find matching row in bs_extract.rows by line_item.
+1. Find matching row in bs_extract.rows by (line_item, fund, section) – all must match.
 2. year_column = bs_extract.current_year_label (or prior_year_label for RULE 1 only).
-3. bs_amount = matching row's current_year (or prior_year for RULE 1 only).
+3. bs_amount = matching row's current_year (RULE 1: current_year for opening; supporting_amount = prior_year).
 4. note = "BS: From bs_extract current_year" (or "prior_year for roll-forward" for RULE 1).
 
 RULE 1 EXCEPTION – "Owners Funds at Start of Year":
-- bs_amount = prior_year from bs_extract (Prior Year closing for roll-forward).
-- year_column = bs_extract.prior_year_label.
+- bs_amount = current_year from bs_extract (opening balance in Current Year column).
+- supporting_amount = prior_year from bs_extract (Prior Year closing). Roll-forward: opening = prior closing.
 
 PROHIBITED:
 - Do NOT use prior_year for ANY other line item. All others use current_year.
+- **Receivable / Levy rows:** If bs_extract.current_year is 0 or blank for that row, output bs_amount = 0. Do NOT substitute with prior_year.
 
 ────────────────────────────────────────
 SECTION C – SCOPE & CLASSIFICATION
@@ -83,12 +84,12 @@ For EACH extracted Balance Sheet line item:
 - supporting_amount MUST come from permitted NON-BS evidence per rule.
 
 STRICT SOURCE SEPARATION:
-- bs_amount source = Balance Sheet ONLY.
-- supporting_amount source = NON-BS evidence ONLY (except RULE 1 exception).
+- bs_amount source = bs_extract ONLY (from FS Balance Sheet, locked at Step 0).
+- supporting_amount source = NON-BS evidence ONLY (except RULE 1: prior_year from bs_extract).
 
 If required evidence is missing:
 - Set appropriate MISSING_* status.
-- supporting_amount = 0 and evidence_ref = "".
+- supporting_amount = empty/null (do NOT use 0 – 0 causes false match/variance). evidence_ref = "".
 - Do NOT substitute with GL.
 
 ────────────────────────────────────────
@@ -111,6 +112,7 @@ NOTE FIELD STRUCTURE (MANDATORY – TWO SEPARATE FIELDS):
 - note = bs_amount source ONLY. Example: "BS: From BS column '2024'" or "BS: From BS column 'Prior Year' (roll-forward)". Do NOT include supporting evidence.
 - supporting_note = supporting_amount source ONLY. Example: "Matches Macquarie Investment Account Statement 2036-74072", "Bank Statement p.2 as at FY end". Do NOT include "From BS column".
 - For SUBTOTAL_CHECK_ONLY rows: supporting_amount = 0, evidence_ref = "", supporting_note = "Subtotal – not independently vouched".
+- For MISSING_* / NO_SUPPORT: supporting_amount = null (omit or null), evidence_ref = "".
 
 Global tolerance:
 - Absolute tolerance = 1.00

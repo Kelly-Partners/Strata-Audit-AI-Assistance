@@ -203,8 +203,8 @@ const BalanceSheetVerificationItemSchema = z.object({
   section: z.enum(["OWNERS_EQUITY", "ASSETS", "LIABILITIES"]).optional(),
   fund: z.string().optional(),
   bs_amount: z.number(),
-  year_column: z.string(), // MANDATORY: Column label (e.g. "2024", "Current Year") from bs_column_mapping.current_year_label
-  supporting_amount: z.number(),
+  year_column: z.string(),
+  supporting_amount: z.number().nullable().optional(), // null/empty when evidence missing; 0 only for SUBTOTAL_CHECK_ONLY
   evidence_ref: z.string(),
   status: z.enum([
     "VERIFIED",

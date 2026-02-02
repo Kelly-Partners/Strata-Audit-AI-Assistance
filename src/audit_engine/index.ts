@@ -3,7 +3,7 @@
  * Exports buildSystemPrompt(), buildStep0Prompt(), and Call 2 phase prompts.
  */
 
-export { buildLevyPrompt, buildPhase4Prompt, buildExpensesPrompt } from "./call2_phase_prompts";
+export { buildLevyPrompt, buildPhase4Prompt, buildExpensesPrompt, buildPhase5Prompt } from "./call2_phase_prompts";
 
 import { HIERARCHY_INTRO, HIERARCHY_AFTER_EVIDENCE } from "./kernel/00_constitution";
 import { EVIDENCE_RULES_PROMPT } from "./kernel/20_evidence_rules";

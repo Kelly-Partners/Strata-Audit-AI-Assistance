@@ -65,5 +65,6 @@ Objective: Establish the single source of truth.
      • prior_year: amount from Prior Year column
      • current_year: amount from Current Year column
    - Identify Prior Year and Current Year columns by reporting date (use intake_summary.financial_year). Prior = column with date = Prior FY end; Current = column with date = Current FY end.
+   - **Receivable / Levy rows (Levies in Arrears, Levies in Advance, Receivable--*):** If Current Year column is blank/empty ("–", "-", or no amount), record current_year = 0. Do NOT fill current_year from prior_year. This prevents wrong-column substitution.
    - Output bs_extract: { prior_year_label, current_year_label, rows: [...] }. Include EVERY line item (Owners Equity, Assets, Liabilities). If single-column BS, use that column for current_year and set prior_year = 0 or omit row.
 `;

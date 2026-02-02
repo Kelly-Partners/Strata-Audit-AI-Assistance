@@ -36,7 +36,19 @@ async function executeFullReview(opts) {
   }));
 
   const isStep0Only = mode === "step0_only";
-  const isCall2Phase = mode === "levy" || mode === "phase4" || mode === "expenses";
+  const isCall2Phase = mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "compliance";
+  const call2PhaseLabels = {
+    levy: "Phase 2 (Levy Reconciliation)",
+    phase4: "Phase 4 (Balance Sheet Verification)",
+    expenses: "Phase 3 (Expenses Vouching)",
+    compliance: "Phase 5 (Statutory Compliance) & Phase 6 (Completion)",
+  };
+  const call2ReturnKeys = {
+    levy: "\"levy_reconciliation\"",
+    phase4: "\"assets_and_cash\"",
+    expenses: "\"expense_samples\"",
+    compliance: "\"statutory_compliance\" and \"completion_outputs\"",
+  };
   const userInstruction = isCall2Phase && previousAudit ?
     `
 ATTACHED FILE MAPPING (Strictly map the binary parts to these names):
@@ -49,8 +61,8 @@ ${JSON.stringify(previousAudit)}
 INSTRUCTIONS:
 1. You MUST use the LOCKED STEP 0 OUTPUT above. Do NOT re-extract document_register or intake_summary.
 2. Use core_data_positions for document/page locations. Use intake_summary.financial_year as global FY.
-3. Execute ${mode === "levy" ? "Phase 2 (Levy Reconciliation)" : mode === "phase4" ? "Phase 4 (Balance Sheet Verification)" : "Phase 3 (Expenses Vouching)"} ONLY.
-4. Return ONLY ${mode === "levy" ? "\"levy_reconciliation\"" : mode === "phase4" ? "\"assets_and_cash\"" : "\"expense_samples\""}. No other keys.
+3. Execute ${call2PhaseLabels[mode] || mode} ONLY.
+4. Return ONLY ${call2ReturnKeys[mode] || mode}. No other keys.
 ${mode === "phase4" ? `
 5. [Phase 4 ONLY] bs_amount and line_item MUST be looked up from LOCKED bs_extract. supporting_amount from R2–R5 (Bank Stmt, Levy Report, etc.). Do NOT re-read Balance Sheet PDF.
 ` : ""}

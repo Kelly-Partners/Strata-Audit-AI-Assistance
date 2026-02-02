@@ -9,6 +9,7 @@ import { PHASE_2_RULES_PROMPT, PHASE_4_RULES_PROMPT } from "./rules";
 import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
 import { PHASE_4_ASSETS_PROMPT } from "./workflow/phase_4_assets";
 import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY } from "./workflow/phase_3_expenses";
+import { PHASE_5_COMPLIANCE_PROMPT } from "./workflow/phase_5_compliance";
 import { MODULE_50_OUTPUTS_PROMPT } from "../audit_outputs/output_registry";
 
 const LOCKED_CONTEXT_INSTRUCTION = `
@@ -38,6 +39,26 @@ You must return a JSON object with a single key "expense_samples" containing an 
 Each item MUST include: GL_ID, GL_Date, GL_Payee, GL_Amount, Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status.
 See MODULE 50 for the full expense_samples (Phase 3 v2) structure. Apply EXPENSE_RISK_FRAMEWORK: Target Sample List from Step A, then Step B (Three-Way Match) and Step C (Fund Integrity) per item.
 `;
+
+/** Phase 5 only output: return statutory_compliance and completion_outputs */
+const PHASE5_OUTPUT_SCHEMA = `
+--- OUTPUT: Return ONLY statutory_compliance and completion_outputs ---
+You must return a JSON object with two keys: "statutory_compliance" and "completion_outputs".
+- statutory_compliance: { insurance, gst_reconciliation, income_tax } – Insurance adequacy, GST roll-forward, Income Tax. See MODULE 50.
+- completion_outputs: { issue_register, boundary_disclosure } – Final Issue Register and Boundary Disclosures.
+`;
+
+export function buildPhase5Prompt(): string {
+  return (
+    HIERARCHY_INTRO +
+    EVIDENCE_RULES_PROMPT +
+    HIERARCHY_AFTER_EVIDENCE +
+    LOCKED_CONTEXT_INSTRUCTION +
+    PHASE_5_COMPLIANCE_PROMPT +
+    MODULE_50_OUTPUTS_PROMPT +
+    PHASE5_OUTPUT_SCHEMA
+  );
+}
 
 export function buildLevyPrompt(): string {
   return (

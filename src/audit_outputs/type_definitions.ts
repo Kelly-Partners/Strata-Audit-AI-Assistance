@@ -164,7 +164,8 @@ export interface BalanceSheetVerificationItem {
   bs_amount: number;
   /** MANDATORY: Column label from bs_column_mapping (e.g. "2024", "Current Year") – ensures bs_amount is from correct year */
   year_column: string;
-  supporting_amount: number;
+  /** null/empty when evidence missing (MISSING_*); 0 only for SUBTOTAL_CHECK_ONLY */
+  supporting_amount?: number | null;
   /** Doc_ID/Page for traceability (e.g. "Sys_001/Page 2") */
   evidence_ref: string;
   status: "VERIFIED" | "VARIANCE" | "MISSING_BANK_STMT" | "TIER_3_ONLY" | "MISSING_LEVY_REPORT" | "MISSING_BREAKDOWN" | "NO_SUPPORT" | "GL_SUPPORTED_ONLY" | "SUBTOTAL_CHECK_ONLY";

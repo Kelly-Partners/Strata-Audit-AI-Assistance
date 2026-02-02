@@ -9,9 +9,8 @@ export const ASSET_VERIFICATION_RULES_PROMPT = `
 [GATE 2 LOGIC – FULL BALANCE SHEET VERIFICATION] – STRICT ENFORCEMENT
 
 GLOBAL RULES (DO NOT VIOLATE):
-- bs_amount and line_item source = LOCKED bs_extract ONLY. Do NOT re-read Balance Sheet PDF.
-- supporting_amount source = NON-BS evidence ONLY, per rule (Bank Stmt, Levy Report, breakdown, GL).
-- EXCEPTION: RULE 1 bs_amount uses prior_year from bs_extract; supporting_amount may compare to Prior Year.
+- bs_amount and line_item source = LOCKED bs_extract ONLY (extracted from FS Balance Sheet and locked at Step 0). Do NOT re-read Balance Sheet PDF.
+- supporting_amount source = NON-BS evidence ONLY, per rule (Bank Stmt, Levy Report, breakdown, GL). EXCEPTION: RULE 1 supporting_amount = prior_year from bs_extract.
 - tolerance_abs = 1.00.
 
 ────────────────────────────────────────
@@ -22,14 +21,13 @@ Target:
 - "Owners Funds at Start of Year" ONLY.
 
 bs_amount:
-- From bs_extract: use prior_year for "Owners Funds at Start of Year" (roll-forward target).
+- From bs_extract: use **current_year** (the opening balance as shown in Current Year column). This is the "Start of Year" figure for roll-forward.
 
 supporting_amount:
-- From bs_extract: use prior_year (Closing Balance) – compare to bs_amount for roll-forward.
-- This is the ONLY rule where prior_year is used for bs_amount.
+- From bs_extract: use **prior_year** (Prior Year Closing Balance). Compare to bs_amount – they should match (opening of current = closing of prior).
 
 Action:
-- Compare bs_amount vs Prior Year Closing Balance.
+- Compare bs_amount (current year opening) vs supporting_amount (prior year closing). Roll-forward check.
 
 Status:
 - |Difference| ≤ tolerance → VERIFIED
@@ -129,6 +127,14 @@ If line_item is a subtotal with numeric amount:
 - status = SUBTOTAL_CHECK_ONLY
 - supporting_amount MUST be 0
 - evidence_ref MUST be ""
+
+────────────────────────────────────────
+MISSING EVIDENCE (MISSING_*, NO_SUPPORT)
+────────────────────────────────────────
+
+When required evidence is missing → status = MISSING_BANK_STMT | MISSING_LEVY_REPORT | MISSING_BREAKDOWN | NO_SUPPORT:
+- supporting_amount MUST be empty/null. Do NOT use 0 (0 causes false match or false variance).
+- evidence_ref MUST be "".
 - supporting_note MUST state "Subtotal – not independently vouched"
 
 ────────────────────────────────────────

@@ -237,23 +237,26 @@ const App: React.FC = () => {
     let filePaths: string[] = [];
     try {
       filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files!);
-      const runPhase = (phase: "levy" | "phase4" | "expenses") =>
+      const runPhase = (phase: "levy" | "phase4" | "expenses" | "compliance") =>
         callExecuteFullReview({
           files: targetPlan.files,
           expectedPlanId: planId,
           mode: phase,
           step0Output: step0,
         });
-      const [levyRes, phase4Res, expensesRes] = await Promise.all([
+      const [levyRes, phase4Res, expensesRes, complianceRes] = await Promise.all([
         runPhase("levy"),
         runPhase("phase4"),
         runPhase("expenses"),
+        runPhase("compliance"),
       ]);
       const merged: typeof step0 = {
         ...step0,
         levy_reconciliation: levyRes.levy_reconciliation,
         assets_and_cash: phase4Res.assets_and_cash,
         expense_samples: expensesRes.expense_samples,
+        statutory_compliance: complianceRes.statutory_compliance,
+        completion_outputs: complianceRes.completion_outputs,
       };
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
