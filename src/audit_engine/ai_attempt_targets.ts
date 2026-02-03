@@ -27,12 +27,13 @@ export function buildAiAttemptTargets(
   const targets: AiAttemptTarget[] = [];
   if (!result) return targets;
 
-  // System Identified: Levy variance
-  if (result.levy_reconciliation?.master_table?.Levy_Variance?.amount !== 0) {
+  // System Identified: Levy variance (only when chain exists and amount !== 0)
+  const levyVar = result.levy_reconciliation?.master_table?.Levy_Variance?.amount;
+  if (levyVar != null && levyVar !== 0) {
     targets.push({
       phase: "levy",
       itemId: "levy_variance",
-      description: `Levy Variance: $${result.levy_reconciliation.master_table.Levy_Variance.amount?.toLocaleString()}`,
+      description: `Levy Variance: $${levyVar.toLocaleString()}`,
       source: "system",
     });
   }

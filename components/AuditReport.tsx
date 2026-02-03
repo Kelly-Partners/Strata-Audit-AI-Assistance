@@ -1075,7 +1075,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
         )}
 
         {/* REVENUE (NEW TABLE E.MASTER) */}
-        {activeTab === 'levy' && data.levy_reconciliation && (
+        {activeTab === 'levy' && data.levy_reconciliation?.master_table && (
           <div className="space-y-8">
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
               <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
@@ -1414,6 +1414,12 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                 </table>
               </div>
             </div>
+          </div>
+        )}
+        {activeTab === 'levy' && !data.levy_reconciliation?.master_table && (
+          <div className="bg-white p-8 rounded border border-gray-200 shadow-sm text-center py-16 text-gray-500">
+            <p className="font-bold text-sm">No Levy Reconciliation data</p>
+            <p className="text-xs mt-1">Run Call 2 to populate Table E.Master</p>
           </div>
         )}
 
@@ -1891,9 +1897,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                     <div className="space-y-4">
                         {(() => {
                             const issues: { source: string; description: string; status: string; severity: 'high'|'medium'|'low' }[] = [];
-                            // Levy variance
-                            if (data.levy_reconciliation?.master_table?.Levy_Variance?.amount !== 0) {
-                                issues.push({ source: 'Levy Rec', description: `Levy Variance: $${data.levy_reconciliation.master_table.Levy_Variance.amount.toLocaleString()}`, status: 'VARIANCE', severity: 'high' });
+                            // Levy variance (only when chain exists and amount !== 0)
+                            const levyVar = data.levy_reconciliation?.master_table?.Levy_Variance?.amount;
+                            if (levyVar != null && levyVar !== 0) {
+                                issues.push({ source: 'Levy Rec', description: `Levy Variance: $${levyVar.toLocaleString()}`, status: 'VARIANCE', severity: 'high' });
                             }
                             // Expense FAIL/RISK_FLAG
                             (data.expense_samples || []).forEach((exp, i) => {
@@ -1909,9 +1916,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                                     issues.push({ source: 'Balance Sheet', description: `${bs.line_item} - ${bs.status}`, status: bs.status, severity: bs.status.includes('MISSING') || bs.status.includes('NO_SUPPORT') ? 'high' : 'medium' });
                                 }
                             });
-                            // GST variance
-                            if (data.statutory_compliance?.gst_reconciliation?.GST_Rec_Variance?.amount !== 0) {
-                                issues.push({ source: 'GST', description: `GST Variance: $${data.statutory_compliance.gst_reconciliation.GST_Rec_Variance.amount.toLocaleString()}`, status: 'VARIANCE', severity: 'high' });
+                            // GST variance (only when chain exists and amount !== 0)
+                            const gstVar = data.statutory_compliance?.gst_reconciliation?.GST_Rec_Variance?.amount;
+                            if (gstVar != null && gstVar !== 0) {
+                                issues.push({ source: 'GST', description: `GST Variance: $${gstVar.toLocaleString()}`, status: 'VARIANCE', severity: 'high' });
                             }
                             
                             return issues.length === 0 ? (
