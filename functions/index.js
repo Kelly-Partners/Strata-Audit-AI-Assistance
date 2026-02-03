@@ -110,7 +110,7 @@ exports.executeFullReview = onRequest(
                 const snap = await tx.get(planRef);
                 const current = snap.exists ? snap.data() : {};
                 const prev = current.result || body.previousAudit || {};
-                let merged = {...prev};
+                const merged = {...prev};
                 if (mode === "levy") merged.levy_reconciliation = result.levy_reconciliation;
                 else if (mode === "phase4") merged.assets_and_cash = result.assets_and_cash;
                 else if (mode === "expenses") merged.expense_samples = result.expense_samples;
@@ -125,31 +125,44 @@ exports.executeFullReview = onRequest(
                 }, {merge: true});
               });
             } else {
-              const fullResult = mode === "aiAttempt" ? (() => {
+              let fullResult;
+              if (mode === "aiAttempt") {
                 const prev = body.previousAudit || {};
                 const ups = result.ai_attempt_updates;
-                const m = {...prev};
-                if (ups?.levy_reconciliation) m.levy_reconciliation = ups.levy_reconciliation;
-                if (ups?.balance_sheet_updates?.length) {
-                  const v = m.assets_and_cash?.balance_sheet_verification || [];
-                  for (const u of ups.balance_sheet_updates) {
-                    const i = v.findIndex((r) => r.line_item === u.line_item && r.fund === u.fund);
-                    if (i >= 0) v[i] = {...v[i], ...u}; else v.push(u);
+                fullResult = {...prev};
+                if (ups?.levy_reconciliation) fullResult.levy_reconciliation = ups.levy_reconciliation;
+                if (ups?.balance_sheet_updates?.length && fullResult.assets_and_cash?.balance_sheet_verification) {
+                  const verif = [...fullResult.assets_and_cash.balance_sheet_verification];
+                  const key = (b) => `${b.line_item || ""}|${b.fund || "N/A"}`;
+                  const updateMap = new Map(ups.balance_sheet_updates.map((b) => [key(b), b]));
+                  for (let i = 0; i < verif.length; i++) {
+                    const u = updateMap.get(key(verif[i]));
+                    if (u) verif[i] = u;
                   }
-                  m.assets_and_cash = {...(m.assets_and_cash || {}), balance_sheet_verification: v};
+                  fullResult.assets_and_cash = {...fullResult.assets_and_cash, balance_sheet_verification: verif};
                 }
-                if (ups?.expense_updates?.length) {
-                  const ex = m.expense_samples || [];
+                if (ups?.expense_updates?.length && fullResult.expense_samples) {
+                  const samples = [...fullResult.expense_samples];
                   for (const u of ups.expense_updates) {
-                    const i = ex.findIndex((e) => e.GL_ID === u.item?.GL_ID || e.GL_Payee === u.item?.GL_Payee);
-                    if (i >= 0 && u.item) ex[i] = u.item; else if (u.item) ex.push(u.item);
+                    const match = (u.merge_key || "").match(/^exp_(\d+)$/);
+                    if (match) {
+                      const idx = parseInt(match[1], 10);
+                      if (idx >= 0 && idx < samples.length && u.item) samples[idx] = u.item;
+                    }
                   }
-                  m.expense_samples = ex;
+                  fullResult.expense_samples = samples;
                 }
-                if (ups?.statutory_compliance) m.statutory_compliance = {...m.statutory_compliance, ...ups.statutory_compliance};
-                if (Array.isArray(result.ai_attempt_resolution_table)) m.ai_attempt_resolution_table = result.ai_attempt_resolution_table;
-                return m;
-              })() : (mode === "completion" ? {...(body.previousAudit || {}), completion_outputs: result.completion_outputs} : result);
+                if (ups?.statutory_compliance && Object.keys(ups.statutory_compliance).length > 0) {
+                  fullResult.statutory_compliance = {...fullResult.statutory_compliance, ...ups.statutory_compliance};
+                }
+                if (Array.isArray(result.ai_attempt_resolution_table)) {
+                  fullResult.ai_attempt_resolution_table = result.ai_attempt_resolution_table;
+                }
+              } else if (mode === "completion") {
+                fullResult = {...(body.previousAudit || {}), completion_outputs: result.completion_outputs};
+              } else {
+                fullResult = result;
+              }
               await planRef.set({
                 result: fullResult,
                 status: "completed",
@@ -176,7 +189,9 @@ exports.executeFullReview = onRequest(
               error: msg,
               updatedAt: Date.now(),
             }, {merge: true});
-          } catch (_) {}
+          } catch (e) {
+            void e;
+          }
         }
         res.status(500).json({
           error: msg,

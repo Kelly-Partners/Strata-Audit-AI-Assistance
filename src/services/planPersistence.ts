@@ -15,6 +15,7 @@ import {
   where,
   orderBy,
   getDocs,
+  onSnapshot,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
@@ -96,8 +97,25 @@ export async function savePlanToFirestore(
 }
 
 /**
- * 获取当前用户的所有计划（用于从 Firestore 加载列表）。
- * 需要 Firestore 复合索引：plans 集合 (userId ASC, createdAt DESC)。
+ * Subscribe to a plan document for real-time updates (e.g. when Cloud Function writes result after refresh).
+ * Returns unsubscribe function.
+ */
+export function subscribePlanDoc(
+  db: Firestore,
+  planId: string,
+  onUpdate: (data: PlanDoc & { id: string }) => void
+): () => void {
+  const docRef = doc(db, "plans", planId);
+  return onSnapshot(docRef, (snap) => {
+    if (snap.exists()) {
+      onUpdate({ id: snap.id, ...(snap.data() as PlanDoc) });
+    }
+  });
+}
+
+/**
+ * Get current user's plans from Firestore (one-time load).
+ * Requires Firestore composite index: plans (userId ASC, createdAt DESC).
  */
 export async function getPlansFromFirestore(
   db: Firestore,

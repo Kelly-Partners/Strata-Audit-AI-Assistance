@@ -48,10 +48,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
                 d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
               />
             </svg>
-            <p className="mb-2 text-xs text-gray-600 font-bold uppercase tracking-wider">
+            <p className="mb-2 text-caption text-gray-600 font-bold uppercase tracking-wider">
               <span className="text-[#C5A059]">CLICK TO UPLOAD</span> EVIDENCE
             </p>
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest">PDF, XLSX, CSV (Max 10MB)</p>
+            <p className="text-micro text-gray-400 uppercase tracking-widest">PDF, XLSX, CSV (Max 10MB)</p>
           </div>
           <input
             id="dropzone-file"
@@ -77,18 +77,18 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
                 className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded shadow-sm hover:border-[#C5A059] transition-colors group"
               >
                 <div className="flex items-center space-x-3 flex-1 min-w-0">
-                  <span className="text-[10px] bg-[#C5A059] text-black px-1.5 py-0.5 font-bold uppercase tracking-widest rounded-sm shrink-0">
+                  <span className="text-micro bg-[#C5A059] text-black px-1.5 py-0.5 font-bold uppercase tracking-widest rounded-sm shrink-0">
                     {file.name.split('.').pop()?.toUpperCase()}
                   </span>
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-xs text-gray-800 font-medium truncate">{file.name}</span>
+                    <span className="text-caption text-gray-800 font-medium truncate">{file.name}</span>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
+                      <span className={`text-tiny px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
                         meta.batch === 'initial' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
                       }`}>
                         {meta.batch === 'initial' ? 'Initial' : 'Additional'}
                       </span>
-                      <span className="text-[10px] text-gray-400 font-mono">{uploadTime}</span>
+                      <span className="text-micro text-gray-400 font-mono">{uploadTime}</span>
                     </div>
                   </div>
                 </div>
