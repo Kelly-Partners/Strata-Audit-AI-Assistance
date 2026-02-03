@@ -19,7 +19,7 @@ import {
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
-import type { TriageItem } from "../audit_outputs/type_definitions";
+import type { TriageItem, UserResolution, UserOverride } from "../audit_outputs/type_definitions";
 
 export interface FileMetaEntry {
   uploadedAt: number;
@@ -35,6 +35,8 @@ export interface PlanDoc {
   fileMeta?: FileMetaEntry[];
   result?: AuditResponse | null;
   triage?: TriageItem[];
+  user_resolutions?: UserResolution[];
+  user_overrides?: UserOverride[];
   error?: string | null;
   updatedAt?: number;
 }

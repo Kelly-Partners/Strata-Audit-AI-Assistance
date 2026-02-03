@@ -6,12 +6,28 @@ import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
 import { callExecuteFullReview } from './services/gemini';
 import { mergeAiAttemptUpdates } from './services/mergeAiAttemptUpdates';
-import { buildAiAttemptTargets } from './src/audit_engine/ai_attempt_targets';
+import { buildAiAttemptTargets, buildSystemTriageItems, mergeTriageWithSystem, AREA_DISPLAY, AREA_ORDER } from './src/audit_engine/ai_attempt_targets';
 import { auth, db, storage, hasValidFirebaseConfig } from './services/firebase';
 import { uploadPlanFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore, getPlansFromFirestore, loadPlanFilesFromStorage, subscribePlanDoc } from './services/planPersistence';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { Plan, PlanStatus, TriageItem, FileMetaEntry } from './types';
+import { Plan, PlanStatus, TriageItem, UserResolution, ResolutionType, FileMetaEntry } from './types';
+
+/** Migrate user_overrides to user_resolutions for backward compat */
+function migrateResolutions(
+  resolutions: UserResolution[] | undefined,
+  overrides: { itemKey: string; signedOffAt: number; signedOffBy?: string; note?: string }[] | undefined
+): UserResolution[] {
+  if (resolutions?.length) return resolutions;
+  if (!overrides?.length) return [];
+  return overrides.map((o) => ({
+    itemKey: o.itemKey,
+    resolutionType: "Override" as const,
+    comment: o.note || "(Migrated from sign-off)",
+    resolvedAt: o.signedOffAt,
+    resolvedBy: o.signedOffBy,
+  }));
+}
 
 /** Reconcile fileMeta when files change: keep meta for kept files, add 'additional' for new files */
 function reconcileFileMeta(
@@ -71,6 +87,7 @@ const App: React.FC = () => {
           fileMeta: p.fileMeta ?? [],
           result: p.result ?? null,
           triage: p.triage ?? [],
+          user_resolutions: migrateResolutions(p.user_resolutions, p.user_overrides),
           error: p.error ?? null,
         }));
         setPlans(mapped);
@@ -85,9 +102,32 @@ const App: React.FC = () => {
   const activePlan = plans.find(p => p.id === activePlanId) || null;
 
   // Real-time sync: when active plan is updated in Firestore (e.g. by Cloud Function after refresh), merge into local state
+  // Auto-populate triage from Phase 2-5 non-reconciled items when result has Call 2 data
   useEffect(() => {
     if (!activePlanId || !hasValidFirebaseConfig) return;
-    const unsub = subscribePlanDoc(db, activePlanId, (docData) => {
+    const unsub = subscribePlanDoc(db, activePlanId, async (docData) => {
+      const result = docData.result;
+      const hasCall2 = result && (
+        (result.levy_reconciliation != null && Object.keys(result.levy_reconciliation?.master_table || {}).length > 0) ||
+        (result.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
+        (result.expense_samples?.length ?? 0) > 0
+      );
+      let triageToSet = docData.triage ?? [];
+      if (hasCall2) {
+        const systemItems = buildSystemTriageItems(result);
+        const existingTriage = docData.triage ?? [];
+        const newTriage = mergeTriageWithSystem(existingTriage, systemItems, result);
+        const idsChanged = JSON.stringify(newTriage.map((t) => t.id).sort()) !== JSON.stringify(existingTriage.map((t) => t.id).sort());
+        if (idsChanged) {
+          await savePlanToFirestore(db, activePlanId, {
+            userId: docData.userId,
+            name: docData.name,
+            createdAt: docData.createdAt,
+            triage: newTriage,
+          });
+          triageToSet = newTriage;
+        }
+      }
       setPlans((prev) => {
         const idx = prev.findIndex((p) => p.id === activePlanId);
         if (idx < 0) return prev;
@@ -98,6 +138,8 @@ const App: React.FC = () => {
                 ...plan,
                 status: (docData.status as PlanStatus) ?? plan.status,
                 result: docData.result ?? plan.result,
+                triage: triageToSet,
+                user_resolutions: docData.user_resolutions ?? plan.user_resolutions ?? [],
                 error: docData.error ?? plan.error,
               }
             : plan
@@ -200,30 +242,65 @@ const App: React.FC = () => {
 
   // --- TRIAGE / FLAG HANDLER ---
   const handleTriage = (item: TriageItem, action: 'add' | 'remove') => {
-    if (!activePlanId) return;
-    
+    if (!activePlanId || !firebaseUser) return;
+    let nextTriage: TriageItem[] = [];
     setPlans(prev => prev.map(p => {
        if (p.id !== activePlanId) return p;
-       
        if (action === 'add') {
-         // Upsert based on rowId to allow editing
          const existing = p.triage.find(t => t.rowId === item.rowId);
-         if (existing) {
-            return {
-               ...p,
-               triage: p.triage.map(t => t.rowId === item.rowId ? item : t)
-            };
-         }
-         return { ...p, triage: [...p.triage, item] };
+         const updated = existing
+           ? p.triage.map(t => t.rowId === item.rowId ? { ...item, source: item.source ?? "user" as const } : t)
+           : [...p.triage, { ...item, source: item.source ?? "user" as const }];
+         nextTriage = updated;
+         return { ...p, triage: updated };
        } else {
-         return { ...p, triage: p.triage.filter(t => t.id !== item.id) };
+         nextTriage = p.triage.filter(t => t.id !== item.id);
+         return { ...p, triage: nextTriage };
        }
     }));
+    const plan = plans.find((p) => p.id === activePlanId);
+    if (plan) {
+      savePlanToFirestore(db, activePlanId, { userId: firebaseUser.uid, name: plan.name, createdAt: plan.createdAt, triage: nextTriage });
+    }
+  };
+
+  /** Mark off modal – Resolved / Flag / Override with required comment */
+  const [markOffModal, setMarkOffModal] = useState<{ item: TriageItem; resolutionType: ResolutionType } | null>(null);
+  const [focusTabRequest, setFocusTabRequest] = useState<'levy' | 'assets' | 'expense' | 'gstCompliance' | null>(null);
+
+  const handleMarkOff = async (item: TriageItem, resolutionType: ResolutionType, comment: string) => {
+    if (!activePlanId || !firebaseUser || !comment.trim()) return;
+    const itemId = item.rowId.includes("-") ? item.rowId.substring(item.rowId.indexOf("-") + 1) : item.rowId;
+    const itemKey = `${item.tab}:${itemId}`;
+    const resolution: UserResolution = {
+      itemKey,
+      resolutionType,
+      comment: comment.trim(),
+      resolvedAt: Date.now(),
+      resolvedBy: firebaseUser.email ?? firebaseUser.uid,
+    };
+    const plan = plans.find((p) => p.id === activePlanId);
+    if (!plan) return;
+    const next = [...(plan.user_resolutions ?? []).filter((r) => r.itemKey !== itemKey), resolution];
+    setPlans((prev) => prev.map((p) => (p.id === activePlanId ? { ...p, user_resolutions: next } : p)));
+    setMarkOffModal(null);
+    await savePlanToFirestore(db, activePlanId, {
+      userId: firebaseUser.uid,
+      name: plan.name,
+      createdAt: plan.createdAt,
+      user_resolutions: next,
+    });
+  };
+
+  const getResolution = (item: TriageItem, resolutions: UserResolution[] = []): UserResolution | undefined => {
+    const itemId = item.rowId.includes("-") ? item.rowId.substring(item.rowId.indexOf("-") + 1) : item.rowId;
+    const itemKey = `${item.tab}:${itemId}`;
+    return resolutions.find((r) => r.itemKey === itemKey);
   };
 
   // --- LOGIC ENGINE EXECUTION ---
 
-  /** Infer next step: call1 (Step 0), call2 (4 phases), aiAttempt (targeted re-verify), or done (after Phase 6) */
+  /** Infer next step: call1 (Step 0), call2 (4 phases), aiAttempt (targeted re-verify) */
   const getNextStep = (plan: Plan): "call1" | "call2" | "aiAttempt" | "done" => {
     if (!plan.result?.document_register?.length) return "call1";
     const hasCall2 =
@@ -231,8 +308,7 @@ const App: React.FC = () => {
       (plan.result.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
       (plan.result.expense_samples?.length ?? 0) > 0;
     if (!hasCall2) return "call2";
-    const hasCompletion = plan.result.completion_outputs != null;
-    return hasCompletion ? "done" : "aiAttempt";
+    return "aiAttempt";
   };
 
   const handleNextStep = async (planId: string) => {
@@ -288,17 +364,18 @@ const App: React.FC = () => {
         expense_samples: expensesRes.expense_samples,
         statutory_compliance: complianceRes.statutory_compliance,
       };
+      const mergedTriage = mergeTriageWithSystem(targetPlan.triage, buildSystemTriageItems(merged), merged);
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
         status: "completed",
         filePaths,
         fileMeta: targetPlan.fileMeta,
         result: merged,
-        triage: targetPlan.triage,
+        triage: mergedTriage,
       });
       setPlans((prev) =>
         prev.map((p) =>
-          p.id === planId ? { ...p, status: "completed" as const, result: merged } : p
+          p.id === planId ? { ...p, status: "completed" as const, result: merged, triage: mergedTriage } : p
         )
       );
     } catch (err: unknown) {
@@ -344,7 +421,7 @@ const App: React.FC = () => {
     }
     const targets = buildAiAttemptTargets(mergedSoFar, targetPlan.triage);
     if (targets.length === 0) {
-      updatePlan(planId, { error: "No items to re-verify. Add items from System Identified Issues or Triage in the AI Attempt tab, then run." });
+      updatePlan(planId, { error: "No items to re-verify. Add items in the AI Attempt tab (or flag rows in report), then run." });
       return;
     }
     updatePlan(planId, { status: "processing", error: null });
@@ -392,73 +469,6 @@ const App: React.FC = () => {
       );
     } catch (err: unknown) {
       const errMessage = (err as Error)?.message || "AI Attempt Failed";
-      await savePlanToFirestore(db, planId, {
-        ...baseDoc,
-        status: "failed",
-        filePaths: targetPlan.filePaths ?? [],
-        fileMeta: targetPlan.fileMeta,
-        error: errMessage,
-      });
-      setPlans((prev) =>
-        prev.map((p) =>
-          p.id === planId ? { ...p, status: "failed" as const, error: errMessage } : p
-        )
-      );
-    }
-  };
-
-  const handleRunPhase6 = async (planId: string) => {
-    const targetPlan = plans.find((p) => p.id === planId);
-    if (!targetPlan) return;
-    if (!firebaseUser) {
-      updatePlan(planId, { error: "Please sign in to run the audit." });
-      return;
-    }
-    if (targetPlan.files.length === 0) {
-      updatePlan(planId, { error: "No evidence files found." });
-      return;
-    }
-    const mergedSoFar = targetPlan.result;
-    if (!mergedSoFar?.document_register?.length || !mergedSoFar?.intake_summary) {
-      updatePlan(planId, { error: "Please complete Step 0 and Call 2 before running Phase 6." });
-      return;
-    }
-    const hasCall2 =
-      (mergedSoFar.levy_reconciliation != null && Object.keys(mergedSoFar.levy_reconciliation?.master_table || {}).length > 0) ||
-      (mergedSoFar.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
-      (mergedSoFar.expense_samples?.length ?? 0) > 0;
-    if (!hasCall2) {
-      updatePlan(planId, { error: "Please complete Call 2 (Levy, Balance Sheet, Expenses, Compliance) before running Phase 6." });
-      return;
-    }
-    updatePlan(planId, { status: "processing", error: null });
-    await savePlanToFirestore(db, planId, { userId: firebaseUser.uid, name: targetPlan.name, createdAt: targetPlan.createdAt, status: "processing", error: null });
-    setIsCreateModalOpen(false);
-    const userId = firebaseUser.uid;
-    const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
-    try {
-      const completionRes = await callExecuteFullReview({
-        files: targetPlan.files,
-        expectedPlanId: planId,
-        mode: "completion",
-        step0Output: mergedSoFar,
-      });
-      const finalMerged = { ...mergedSoFar, completion_outputs: completionRes.completion_outputs };
-      await savePlanToFirestore(db, planId, {
-        ...baseDoc,
-        status: "completed",
-        filePaths: targetPlan.filePaths ?? [],
-        fileMeta: targetPlan.fileMeta,
-        result: finalMerged,
-        triage: targetPlan.triage,
-      });
-      setPlans((prev) =>
-        prev.map((p) =>
-          p.id === planId ? { ...p, status: "completed" as const, result: finalMerged } : p
-        )
-      );
-    } catch (err: unknown) {
-      const errMessage = (err as Error)?.message || "Phase 6 Failed";
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
         status: "failed",
@@ -646,9 +656,6 @@ const App: React.FC = () => {
       window.removeEventListener('drop', handleDrop);
     };
   }, [activePlanId, activePlan, plans]); // Re-bind if active context changes
-
-  // Helper to get triage counts
-  const getTriageCount = (severity: string) => activePlan?.triage.filter(t => t.severity === severity).length || 0;
 
   // --- 登录门控：未登录时显示登录页（风格对齐 strata-tax-review-assistance） ---
   const handleEmailAuth = async (e: React.FormEvent) => {
@@ -858,66 +865,58 @@ const App: React.FC = () => {
                     <div className="text-center py-10 opacity-30">
                        <svg className="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                        <p className="text-body font-semibold">All Clean</p>
-                       <p className="text-body text-gray-400">Hover rows to flag issues</p>
+                       <p className="text-body text-gray-400">System items auto-fill after Call 2; hover rows to flag</p>
                     </div>
                 ) : (
-                    <div className="space-y-6">
-                       {/* CRITICAL */}
-                       {getTriageCount('critical') > 0 && (
-                          <div>
-                             <h4 className="text-body font-semibold text-red-500 mb-2 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span> Critical ({getTriageCount('critical')})
-                             </h4>
-                             <div className="space-y-2">
-                                {activePlan.triage.filter(t => t.severity === 'critical').map(t => (
-                                   <div key={t.id} className="bg-red-900/20 border-l-2 border-red-500 p-2 rounded-r hover:bg-red-900/40 cursor-pointer group relative">
-                                       <button onClick={(e) => { e.stopPropagation(); handleTriage(t, 'remove'); }} className="absolute top-1 right-1 text-red-500 opacity-0 group-hover:opacity-100 text-body hover:text-white">✕</button>
-                                       <div className="text-body font-semibold text-red-200 truncate mb-1">{t.title}</div>
-                                       <div className="text-body text-gray-400 leading-snug line-clamp-2">{t.comment}</div>
-                                       <div className="mt-1 text-caption text-gray-600 font-mono">{t.tab}</div>
+                    <div className="space-y-2">
+                       {AREA_ORDER.map((tab) => {
+                         const items = activePlan.triage.filter((t) => t.tab === tab);
+                         if (items.length === 0) return null;
+                         const areaName = AREA_DISPLAY[tab] ?? tab;
+                         const focusTab = tab === "assets" ? "assets" : tab === "levy" ? "levy" : tab === "gstCompliance" ? "gstCompliance" : "expense";
+                         return (
+                           <details key={tab} className="group/details">
+                             <summary className="cursor-pointer text-body font-semibold text-[#C5A059] flex items-center justify-between list-none py-1">
+                               <span>{areaName} ({items.length})</span>
+                               <span className="text-gray-500 group-open/details:rotate-180 transition-transform">▾</span>
+                             </summary>
+                             <div className="ml-2 mt-1 space-y-0.5">
+                               {items.map((t) => {
+                                 const res = getResolution(t, activePlan.user_resolutions ?? []);
+                                 return (
+                                   <div key={t.id} className={`flex items-center gap-1 py-1 px-1.5 rounded group/item border-l-2 ${
+                                     res ? "border-green-500 bg-green-900/10" :
+                                     t.severity === "critical" ? "border-red-500 bg-red-900/20" :
+                                     t.severity === "medium" ? "border-yellow-500 bg-yellow-900/10" :
+                                     "border-blue-400 bg-blue-900/10"
+                                   }`}>
+                                     <div className="flex-1 min-w-0 truncate text-caption font-medium text-gray-200">{t.title}</div>
+                                     <button onClick={(e) => { e.stopPropagation(); setFocusTabRequest(focusTab); }} className="shrink-0 opacity-0 group-hover/item:opacity-100 text-caption text-[#C5A059] hover:text-white px-1" title="Go to">→</button>
+                                     {!res ? (
+                                       <select
+                                         value=""
+                                         onChange={(e) => {
+                                           const v = e.target.value as ResolutionType | "";
+                                           if (v) { setMarkOffModal({ item: t, resolutionType: v }); e.target.value = ""; }
+                                         }}
+                                         className="shrink-0 opacity-0 group-hover/item:opacity-100 text-micro bg-gray-800 text-gray-300 border border-gray-600 rounded px-1 py-0.5"
+                                       >
+                                         <option value="">Mark</option>
+                                         <option value="Resolved">Resolved</option>
+                                         <option value="Flag">Flag</option>
+                                         <option value="Override">Override</option>
+                                       </select>
+                                     ) : (
+                                       <span className="shrink-0 text-micro text-green-400">{res.resolutionType}</span>
+                                     )}
+                                     <button onClick={(e) => { e.stopPropagation(); handleTriage(t, "remove"); }} className="shrink-0 opacity-0 group-hover/item:opacity-100 text-gray-400 hover:text-red-400 text-caption">✕</button>
                                    </div>
-                                ))}
+                                 );
+                               })}
                              </div>
-                          </div>
-                       )}
-
-                       {/* MEDIUM */}
-                       {getTriageCount('medium') > 0 && (
-                          <div>
-                             <h4 className="text-body font-semibold text-yellow-500 mb-2 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span> Medium ({getTriageCount('medium')})
-                             </h4>
-                             <div className="space-y-2">
-                                {activePlan.triage.filter(t => t.severity === 'medium').map(t => (
-                                   <div key={t.id} className="bg-yellow-900/10 border-l-2 border-yellow-500 p-2 rounded-r hover:bg-yellow-900/20 cursor-pointer group relative">
-                                       <button onClick={(e) => { e.stopPropagation(); handleTriage(t, 'remove'); }} className="absolute top-1 right-1 text-yellow-500 opacity-0 group-hover:opacity-100 text-body hover:text-white">✕</button>
-                                       <div className="text-body font-semibold text-yellow-200 truncate mb-1">{t.title}</div>
-                                       <div className="text-body text-gray-400 leading-snug line-clamp-2">{t.comment}</div>
-                                       <div className="mt-1 text-caption text-gray-600 font-mono">{t.tab}</div>
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
-                       )}
-
-                       {/* LOW */}
-                       {getTriageCount('low') > 0 && (
-                          <div>
-                             <h4 className="text-body font-semibold text-blue-400 mb-2 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span> Low ({getTriageCount('low')})
-                             </h4>
-                             <div className="space-y-2">
-                                {activePlan.triage.filter(t => t.severity === 'low').map(t => (
-                                   <div key={t.id} className="bg-blue-900/10 border-l-2 border-blue-400 p-2 rounded-r hover:bg-blue-900/20 cursor-pointer group relative">
-                                       <button onClick={(e) => { e.stopPropagation(); handleTriage(t, 'remove'); }} className="absolute top-1 right-1 text-blue-400 opacity-0 group-hover:opacity-100 text-body hover:text-white">✕</button>
-                                       <div className="text-body font-semibold text-blue-200 truncate mb-1">{t.title}</div>
-                                       <div className="text-body text-gray-400 leading-snug line-clamp-2">{t.comment}</div>
-                                       <div className="mt-1 text-caption text-gray-600 font-mono">{t.tab}</div>
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
-                       )}
+                           </details>
+                         );
+                       })}
                     </div>
                 )}
              </div>
@@ -1076,24 +1075,6 @@ const App: React.FC = () => {
                    >
                      {getNextStep(activePlan) === "aiAttempt" ? "Run AI Attempt" : "Next Step"}
                    </button>
-                   {/* Proceed with Completion: Phase 6 (only when in AI Attempt state) */}
-                   {getNextStep(activePlan) === "aiAttempt" && (
-                     <button
-                       onClick={() => handleRunPhase6(activePlan.id)}
-                       disabled={
-                         !firebaseUser ||
-                         activePlan.files.length === 0 ||
-                         activePlan.status === "processing"
-                       }
-                       className={`px-6 py-3 font-bold text-caption uppercase tracking-widest rounded-sm border-2 transition-all focus:outline-none ${
-                         !firebaseUser || activePlan.files.length === 0 || activePlan.status === "processing"
-                           ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                           : "bg-[#2d5a27] border-[#2d5a27] text-white hover:bg-[#234a20] hover:border-[#234a20]"
-                       }`}
-                     >
-                       Proceed with Completion
-                     </button>
-                   )}
                  </div>
               </div>
 
@@ -1155,9 +1136,13 @@ const App: React.FC = () => {
                     data={activePlan.result}
                     files={activePlan.files}
                     triageItems={activePlan.triage}
+                    userResolutions={activePlan.user_resolutions ?? []}
                     onTriage={handleTriage}
-                    focusTab={focusTabAfterAction ?? undefined}
-                    onFocusTabConsumed={() => setFocusTabAfterAction(null)}
+                    onMarkOff={(item, type) => setMarkOffModal({ item, resolutionType: type })}
+                    getResolution={(item) => getResolution(item, activePlan.user_resolutions ?? [])}
+                    focusTab={focusTabAfterAction ?? focusTabRequest ?? undefined}
+                    onFocusTabConsumed={() => { setFocusTabAfterAction(null); setFocusTabRequest(null); }}
+                    onRequestFocusTab={(tab) => setFocusTabRequest(tab)}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 text-gray-500">
@@ -1221,8 +1206,58 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Mark Off Modal – Resolved / Flag / Override with required comment */}
+      {markOffModal && (
+        <MarkOffModal
+          item={markOffModal.item}
+          resolutionType={markOffModal.resolutionType}
+          onConfirm={(comment) => handleMarkOff(markOffModal.item, markOffModal.resolutionType, comment)}
+          onClose={() => setMarkOffModal(null)}
+        />
+      )}
     </div>
   );
 };
+
+/** Modal for Mark Off – requires comment */
+function MarkOffModal({
+  item,
+  resolutionType,
+  onConfirm,
+  onClose,
+}: {
+  item: TriageItem;
+  resolutionType: ResolutionType;
+  onConfirm: (comment: string) => void;
+  onClose: () => void;
+}) {
+  const [comment, setComment] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-heading font-bold text-black mb-2">Mark as {resolutionType}</h3>
+        <p className="text-caption text-gray-600 mb-3 truncate">{item.title}</p>
+        <label className="block text-caption font-bold text-gray-600 uppercase mb-2">Comment (required)</label>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="Enter comment..."
+          className="w-full px-4 py-3 border border-gray-300 rounded text-body mb-4 min-h-[80px]"
+          autoFocus
+        />
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 font-bold text-caption text-gray-500 uppercase">Cancel</button>
+          <button
+            onClick={() => { if (comment.trim()) onConfirm(comment); }}
+            disabled={!comment.trim()}
+            className="px-6 py-2 font-bold text-caption uppercase rounded bg-[#C5A059] text-black hover:bg-[#A08040] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default App;

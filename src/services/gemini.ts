@@ -11,7 +11,6 @@ import {
   buildPhase4Prompt,
   buildExpensesPrompt,
   buildPhase5Prompt,
-  buildPhase6Prompt,
   buildAiAttemptPrompt,
 } from "../audit_engine";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
@@ -104,9 +103,7 @@ export async function callExecuteFullReview(
             ? buildExpensesPrompt()
             : mode === "compliance"
               ? buildPhase5Prompt()
-              : mode === "completion"
-                ? buildPhase6Prompt()
-                : mode === "aiAttempt"
+              : mode === "aiAttempt"
                   ? buildAiAttemptPrompt(aiAttemptTargets)
                   : buildSystemPrompt();
 
@@ -118,7 +115,7 @@ export async function callExecuteFullReview(
     ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
     systemPrompt,
     fileManifest,
-    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "compliance" || mode === "completion" || mode === "aiAttempt" ? step0Output : previousAudit) ?? undefined,
+    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "compliance" || mode === "aiAttempt" ? step0Output : previousAudit) ?? undefined,
     mode,
     aiAttemptTargets: mode === "aiAttempt" ? aiAttemptTargets : undefined,
   };

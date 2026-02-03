@@ -8,6 +8,8 @@ import {
   DocumentEntry,
   VerificationStep,
   TriageItem,
+  UserResolution,
+  ResolutionType,
   CoreDataPositions,
   BsColumnMapping,
   BsStructureItem,
@@ -15,6 +17,7 @@ import {
   BsExtractRow,
   ExpenseSample,
 } from '../types';
+import { buildAiAttemptTargets, AREA_DISPLAY, AREA_ORDER } from '../src/audit_engine/ai_attempt_targets';
 
 /** Extract 1-based page number from various ref formats: "Page 3", "p.3", "pg 3", "3" */
 function extractPageNumber(s: string): string | null {
@@ -28,11 +31,16 @@ interface AuditReportProps {
   data: AuditResponse;
   files: File[];
   triageItems: TriageItem[];
+  userResolutions?: UserResolution[];
   onTriage: (item: TriageItem, action: 'add' | 'remove') => void;
-  /** When set, switch to this tab (e.g. after AI Attempt completes) */
+  onMarkOff?: (item: TriageItem, resolutionType: ResolutionType) => void;
+  getResolution?: (item: TriageItem) => UserResolution | undefined;
+  /** When set, switch to this tab (e.g. after AI Attempt completes or jump from Triage) */
   focusTab?: 'docs' | 'levy' | 'assets' | 'expense' | 'gstCompliance' | 'aiAttempt' | 'completion';
   /** Called after focusTab has been applied */
   onFocusTabConsumed?: () => void;
+  /** Request tab focus for jump-from-AI-Attempt (e.g. navigate to Levy / Balance Sheet) */
+  onRequestFocusTab?: (tab: 'levy' | 'assets' | 'expense' | 'gstCompliance') => void;
 }
 
 // Forensic Cell Component - Upgraded for UI Spec + High Visibility
@@ -734,9 +742,9 @@ const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ statu
   let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
   if (s.includes('fail') || s.includes('risk') || s.includes('unauthorised') || s.includes('wrong') || s.includes('insolvent') || s.includes('deficit') || s.includes('variance')) {
     colorClass = 'bg-red-50 text-red-800 border-red-100';
-  } else if (s.includes('pass') || s.includes('ok') || s.includes('resolved') || s.includes('solvent') || s.includes('verified')) {
+  } else if (s.includes('pass') || s.includes('ok') || s.includes('resolved') || s.includes('solvent') || s.includes('verified') || s.includes('override')) {
     colorClass = 'bg-green-50 text-green-800 border-green-100';
-  } else if (s.includes('missing') || s.includes('required') || s.includes('tier_3') || s.includes('no_support') || s.includes('breakdown')) {
+  } else if (s.includes('missing') || s.includes('required') || s.includes('tier_3') || s.includes('no_support') || s.includes('breakdown') || s.includes('flag')) {
     colorClass = 'bg-yellow-50 text-yellow-800 border-yellow-100';
   } else if (s.includes('subtotal_check')) {
     colorClass = 'bg-blue-50 text-blue-800 border-blue-100';
@@ -753,7 +761,14 @@ const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ statu
   );
 };
 
-export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageItems, onTriage, focusTab, onFocusTabConsumed }) => {
+const TAB_TO_FOCUS: Record<string, 'levy' | 'assets' | 'expense' | 'gstCompliance'> = {
+  levy: 'levy', assets: 'assets', expense: 'expense', gstCompliance: 'gstCompliance',
+};
+
+export const AuditReport: React.FC<AuditReportProps> = ({
+  data, files, triageItems, userResolutions = [], onTriage, onMarkOff, getResolution,
+  focusTab, onFocusTabConsumed, onRequestFocusTab,
+}) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'levy' | 'assets' | 'expense' | 'gstCompliance' | 'aiAttempt' | 'completion'>('docs');
   const [activeVerificationSteps, setActiveVerificationSteps] = useState<VerificationStep[] | null>(null);
 
@@ -1789,7 +1804,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                              </div>
                              <span className="text-body text-gray-500 mt-4 uppercase tracking-wider">Expires: <span className="text-black font-bold">{data.statutory_compliance.insurance.Policy_Expiry}</span></span>
                              <div className="absolute top-2 right-2">
-                                <RowAction rowId="ins_overall" tab="GST & Compliance" title="Insurance Overall" triageItems={triageItems} onFlag={(item) => onTriage(item, 'add')} />
+                                <RowAction rowId="ins_overall" tab="gstCompliance" title="Insurance Overall" triageItems={triageItems} onFlag={(item) => onTriage(item, 'add')} />
                              </div>
                         </div>
                     </div>
@@ -1851,213 +1866,156 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
             </div>
         )}
 
-        {/* AI ATTEMPT – System Identified + Triage (To-Do) + Resolution Table */}
+        {/* AI ATTEMPT – Unified Queue + Results (paired per item) */}
         {activeTab === 'aiAttempt' && (
-            <div className="space-y-8">
-                {/* Part 0: AI Attempt Resolution Table (after run) */}
-                {data.ai_attempt_resolution_table && data.ai_attempt_resolution_table.length > 0 && (
-                    <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                        <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                            <h3 className="text-heading font-bold text-black uppercase tracking-wide">AI Attempt Resolution</h3>
-                            <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Summary of re-verification per target</p>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full text-left border border-gray-200">
-                                <thead className="bg-[#C5A059]/10 uppercase text-caption font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-4 py-3 border-b border-gray-200">Items</th>
-                                        <th className="px-4 py-3 border-b border-gray-200">Issue Identified</th>
-                                        <th className="px-4 py-3 border-b border-gray-200">AI Attempt Conduct</th>
-                                        <th className="px-4 py-3 border-b border-gray-200">Result</th>
-                                        <th className="px-4 py-3 border-b border-gray-200">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 text-body">
-                                    {data.ai_attempt_resolution_table.map((row, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50">
-                                            <td className="px-4 py-3 font-medium text-gray-900">{row.item}</td>
-                                            <td className="px-4 py-3 text-gray-700">{row.issue_identified}</td>
-                                            <td className="px-4 py-3 text-gray-600 italic">{row.ai_attempt_conduct}</td>
-                                            <td className="px-4 py-3 text-gray-700">{row.result}</td>
-                                            <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+            <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
+                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                    <h3 className="text-heading font-bold text-black uppercase tracking-wide">Items to Re-verify & Results</h3>
+                    <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Add evidence if needed, then Run AI Attempt to re-verify. Results appear below each item after run.</p>
+                </div>
+                {triageItems.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                        <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <p className="font-bold text-body">No items to re-verify</p>
+                        <p className="text-caption mt-1">All checks passed, or hover rows in report and click flag to add</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full text-left border border-gray-200">
+                            <thead className="bg-[#C5A059]/10 uppercase text-caption font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-4 py-3 border-b border-gray-200">Area</th>
+                                    <th className="px-4 py-3 border-b border-gray-200">Item</th>
+                                    <th className="px-4 py-3 border-b border-gray-200 w-28">Actions</th>
+                                    <th className="px-4 py-3 border-b border-gray-200">Issue Identified</th>
+                                    <th className="px-4 py-3 border-b border-gray-200">AI Attempt Conduct</th>
+                                    <th className="px-4 py-3 border-b border-gray-200">Result</th>
+                                    <th className="px-4 py-3 border-b border-gray-200">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 text-body">
+                                {(() => {
+                                    const targets = buildAiAttemptTargets(data, triageItems);
+                                    const resolutionRows = data.ai_attempt_resolution_table || [];
+                                    const resolutionByKey = new Map<string, typeof resolutionRows[0]>();
+                                    targets.forEach((t, i) => {
+                                        const tab = t.phase === 'levy' ? 'levy' : t.phase === 'phase4' ? 'assets' : t.phase === 'expenses' ? 'expense' : 'gstCompliance';
+                                        const key = `${tab}:${t.itemId}`;
+                                        if (resolutionRows[i]) resolutionByKey.set(key, resolutionRows[i]);
+                                    });
+                                    const sorted = [...triageItems].sort((a, b) => {
+                                        const ia = AREA_ORDER.indexOf(a.tab);
+                                        const ib = AREA_ORDER.indexOf(b.tab);
+                                        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+                                    });
+                                    return sorted.map((t) => {
+                                        const itemId = t.rowId.includes('-') ? t.rowId.substring(t.rowId.indexOf('-') + 1) : t.rowId;
+                                        const key = `${t.tab}:${itemId}`;
+                                        const resolution = resolutionByKey.get(key);
+                                        const res = getResolution?.(t);
+                                        const focusTabId = TAB_TO_FOCUS[t.tab];
+                                        return (
+                                            <React.Fragment key={t.id}>
+                                                {/* Queue row */}
+                                                <tr className={`${resolution || res ? 'bg-gray-50' : ''} ${t.severity === 'critical' ? 'border-l-4 border-l-red-500' : t.severity === 'medium' ? 'border-l-4 border-l-yellow-500' : 'border-l-4 border-l-blue-400'}`}>
+                                                    <td className="px-4 py-2 text-caption font-medium text-gray-700">{AREA_DISPLAY[t.tab] ?? t.tab}</td>
+                                                    <td className="px-4 py-2 text-caption font-medium text-gray-900">
+                                                        {res && <span className="text-green-600 font-bold mr-2">{res.resolutionType}</span>}
+                                                        {t.title}
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <div className="flex items-center gap-2">
+                                                            {onRequestFocusTab && focusTabId && (
+                                                                <button
+                                                                    onClick={() => onRequestFocusTab(focusTabId)}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 text-caption font-medium text-[#C5A059] hover:text-[#8B6914] hover:bg-[#C5A059]/10 rounded border border-[#C5A059]/50 transition-colors"
+                                                                    title="Go to report section"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                                                                    Go to
+                                                                </button>
+                                                            )}
+                                                            {!res && onMarkOff && (
+                                                                <select
+                                                                    value=""
+                                                                    onChange={(e) => {
+                                                                        const v = e.target.value as ResolutionType | "";
+                                                                        if (v) { onMarkOff(t, v); e.target.value = ""; }
+                                                                    }}
+                                                                    className="text-caption bg-white border border-gray-300 rounded px-2 py-1"
+                                                                >
+                                                                    <option value="">Mark</option>
+                                                                    <option value="Resolved">Resolved</option>
+                                                                    <option value="Flag">Flag</option>
+                                                                    <option value="Override">Override</option>
+                                                                </select>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td colSpan={4} className="px-4 py-2 text-caption text-gray-500 italic">—</td>
+                                                </tr>
+                                                {/* Result row (when AI Attempt has run) */}
+                                                {resolution && (
+                                                    <tr className="bg-[#C5A059]/5 hover:bg-[#C5A059]/10">
+                                                        <td colSpan={3} className="px-4 py-0" />
+                                                        <td className="px-4 py-2 text-caption text-gray-700">{resolution.issue_identified}</td>
+                                                        <td className="px-4 py-2 text-caption text-gray-600 italic">{resolution.ai_attempt_conduct}</td>
+                                                        <td className="px-4 py-2 text-caption text-gray-700">{resolution.result}</td>
+                                                        <td className="px-4 py-2"><StatusBadge status={resolution.status} /></td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
+                                        );
+                                    });
+                                })()}
+                            </tbody>
+                        </table>
                     </div>
                 )}
-
-                {/* Part 1: System Identified (unreconciled, unverified, didn't match) */}
-                <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-heading font-bold text-black uppercase tracking-wide">System Identified Issues</h3>
-                        <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Items requiring attention: variances, failures, missing evidence. Add evidence above if needed, then click Run AI Attempt to re-verify only these items.</p>
-                    </div>
-                    <div className="space-y-4">
-                        {(() => {
-                            const issues: { source: string; description: string; status: string; severity: 'high'|'medium'|'low' }[] = [];
-                            // Levy variance (only when chain exists and amount !== 0)
-                            const levyVar = data.levy_reconciliation?.master_table?.Levy_Variance?.amount;
-                            if (levyVar != null && levyVar !== 0) {
-                                issues.push({ source: 'Levy Rec', description: `Levy Variance: $${levyVar.toLocaleString()}`, status: 'VARIANCE', severity: 'high' });
-                            }
-                            // Expense FAIL/RISK_FLAG
-                            (data.expense_samples || []).forEach((exp, i) => {
-                                if (exp.Overall_Status === 'FAIL') {
-                                    issues.push({ source: 'Expense Vouching', description: `${exp.GL_Payee} ($${exp.GL_Amount?.amount}) - ${exp.GL_Date}`, status: 'FAIL', severity: 'high' });
-                                } else if (exp.Overall_Status === 'RISK_FLAG') {
-                                    issues.push({ source: 'Expense Vouching', description: `${exp.GL_Payee} ($${exp.GL_Amount?.amount}) - ${exp.GL_Date}`, status: 'RISK_FLAG', severity: 'medium' });
-                                }
-                            });
-                            // BS verification non-VERIFIED
-                            (data.assets_and_cash?.balance_sheet_verification || []).forEach((bs) => {
-                                if (bs.status && bs.status !== 'VERIFIED') {
-                                    issues.push({ source: 'Balance Sheet', description: `${bs.line_item} - ${bs.status}`, status: bs.status, severity: bs.status.includes('MISSING') || bs.status.includes('NO_SUPPORT') ? 'high' : 'medium' });
-                                }
-                            });
-                            // GST variance (only when chain exists and amount !== 0)
-                            const gstVar = data.statutory_compliance?.gst_reconciliation?.GST_Rec_Variance?.amount;
-                            if (gstVar != null && gstVar !== 0) {
-                                issues.push({ source: 'GST', description: `GST Variance: $${gstVar.toLocaleString()}`, status: 'VARIANCE', severity: 'high' });
-                            }
-                            
-                            return issues.length === 0 ? (
-                                <div className="text-center py-12 text-gray-500">
-                                    <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    <p className="font-bold text-body">No system-identified issues</p>
-                                    <p className="text-caption mt-1">All automated checks passed</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    {issues.map((issue, idx) => (
-                                        <div key={idx} className={`flex items-start gap-3 p-4 border-l-4 rounded-r ${
-                                            issue.severity === 'high' ? 'bg-red-50 border-red-500' :
-                                            issue.severity === 'medium' ? 'bg-yellow-50 border-yellow-500' :
-                                            'bg-blue-50 border-blue-400'
-                                        }`}>
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-micro font-bold uppercase tracking-wider text-gray-500">{issue.source}</span>
-                                                    <StatusBadge status={issue.status} />
-                                                </div>
-                                                <div className="text-body text-gray-800">{issue.description}</div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })()}
-                    </div>
-                </div>
-
-                {/* Part 2: Triage (To-Do) - sync with sidebar triage */}
-                <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-heading font-bold text-black uppercase tracking-wide">Triage (To-Do)</h3>
-                        <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">User-flagged items from report</p>
-                    </div>
-                    {triageItems.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">
-                            <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"></path></svg>
-                            <p className="font-bold text-body">No flagged items</p>
-                            <p className="text-caption mt-1">Hover rows in report and click flag icon to add</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {triageItems.map((t) => (
-                                <div key={t.id} className={`flex items-start gap-3 p-4 border-l-4 rounded-r ${
-                                    t.severity === 'critical' ? 'bg-red-50 border-red-500' :
-                                    t.severity === 'medium' ? 'bg-yellow-50 border-yellow-500' :
-                                    'bg-blue-50 border-blue-400'
-                                }`}>
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-2 py-0.5 text-micro font-bold uppercase tracking-wider rounded ${
-                                                t.severity === 'critical' ? 'bg-red-500 text-white' :
-                                                t.severity === 'medium' ? 'bg-yellow-500 text-white' :
-                                                'bg-blue-500 text-white'
-                                            }`}>{t.severity}</span>
-                                            <span className="text-micro font-bold uppercase tracking-wider text-gray-500">{t.tab}</span>
-                                        </div>
-                                        <div className="text-body font-bold text-gray-900 mb-1">{t.title}</div>
-                                        <div className="text-body text-gray-600 leading-snug">{t.comment}</div>
-                                        <div className="text-micro text-gray-400 mt-2 font-mono">{new Date(t.timestamp).toLocaleString('en-AU')}</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
             </div>
         )}
 
-        {/* COMPLETION */}
-        {activeTab === 'completion' && data.completion_outputs && (
-            <div className="space-y-8">
-                <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-heading font-bold text-black uppercase tracking-wide">Output A: Issue Register</h3>
-                    </div>
-                    {data.completion_outputs.issue_register.length === 0 ? (
-                        <p className="text-gray-500 italic">No issues identified.</p>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full text-left border border-gray-200">
-                                <thead className="bg-red-50 text-red-900 uppercase text-heading-sm font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-5 py-4 border-b border-red-100">ID</th>
-                                        <th className="px-5 py-4 border-b border-red-100">Phase</th>
-                                        <th className="px-5 py-4 border-b border-red-100">Description</th>
-                                        <th className="px-5 py-4 border-b border-red-100">Resolution Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 text-heading-sm">
-                                    {data.completion_outputs.issue_register.map((issue) => (
-                                        <tr key={issue.Issue_ID} className="bg-white">
-                                            <td className="px-5 py-4 text-body text-gray-500">{issue.Issue_ID}</td>
-                                            <td className="px-5 py-4 font-bold text-gray-800">{issue.Phase}</td>
-                                            <td className="px-5 py-4 text-gray-700">{issue.Description}</td>
-                                            <td className="px-5 py-4"><StatusBadge status={issue.Resolution_Status} /></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+        {/* COMPLETION – Items marked Resolved / Flag / Override (no AI, always open) */}
+        {activeTab === 'completion' && (
+            <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
+                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                    <h3 className="text-heading font-bold text-black uppercase tracking-wide">Completion – Flagged / Resolved Items</h3>
+                    <p className="text-caption text-gray-500 mt-1">Items marked in Triage or AI Attempt move here.</p>
                 </div>
-
-                <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-heading font-bold text-black uppercase tracking-wide">Output B: Boundary Disclosure</h3>
-                    </div>
-                     {data.completion_outputs.boundary_disclosure.length === 0 ? (
-                        <p className="text-gray-500 italic">No boundary limitations to disclose.</p>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full text-left border border-gray-200">
-                                <thead className="bg-yellow-50 text-yellow-900 uppercase text-heading-sm font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-5 py-4 border-b border-yellow-100">Area</th>
-                                        <th className="px-5 py-4 border-b border-yellow-100">Missing Evidence</th>
-                                        <th className="px-5 py-4 border-b border-yellow-100">Why Unresolved</th>
-                                        <th className="px-5 py-4 border-b border-yellow-100">Required to Resolve</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 text-heading-sm">
-                                    {data.completion_outputs.boundary_disclosure.map((item, idx) => (
-                                        <tr key={idx} className="bg-white">
-                                            <td className="px-5 py-4 font-bold text-gray-800">{item.Area}</td>
-                                            <td className="px-5 py-4 text-red-600 font-medium">{item.What_Is_Missing}</td>
-                                            <td className="px-5 py-4 text-gray-600 italic">{item.Why_Unresolved}</td>
-                                            <td className="px-5 py-4 text-gray-700">{item.Required_To_Resolve}</td>
+                {!userResolutions?.length ? (
+                    <p className="text-gray-500 italic">No items yet. Mark items as Resolved, Flag, or Override in Triage or AI Attempt.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full text-left border border-gray-200">
+                            <thead className="bg-gray-100 text-black uppercase text-heading-sm font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-5 py-3 border-b border-gray-200">Area</th>
+                                    <th className="px-5 py-3 border-b border-gray-200">Item</th>
+                                    <th className="px-5 py-3 border-b border-gray-200">Status</th>
+                                    <th className="px-5 py-3 border-b border-gray-200">Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 text-heading-sm">
+                                {userResolutions.map((r, i) => {
+                                    const t = triageItems.find((t0) => {
+                                        const id = t0.rowId.includes("-") ? t0.rowId.substring(t0.rowId.indexOf("-") + 1) : t0.rowId;
+                                        return `${t0.tab}:${id}` === r.itemKey;
+                                    });
+                                    const area = r.itemKey.split(":")[0];
+                                    const areaNames: Record<string, string> = { assets: "Balance Sheet", levy: "Levy Rec", gstCompliance: "GST & Compliance", expense: "Expense Vouching" };
+                                    return (
+                                        <tr key={r.itemKey + i} className="bg-white">
+                                            <td className="px-5 py-3 font-medium text-gray-800">{areaNames[area] ?? area}</td>
+                                            <td className="px-5 py-3 text-gray-700">{t?.title ?? r.itemKey}</td>
+                                            <td className="px-5 py-3"><StatusBadge status={r.resolutionType} /></td>
+                                            <td className="px-5 py-3 text-gray-600 max-w-xs truncate" title={r.comment}>{r.comment}</td>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
         )}
       </div>

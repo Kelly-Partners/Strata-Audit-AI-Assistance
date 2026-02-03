@@ -10,7 +10,6 @@ import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
 import { PHASE_4_ASSETS_PROMPT } from "./workflow/phase_4_assets";
 import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY } from "./workflow/phase_3_expenses";
 import { PHASE_5_COMPLIANCE_PROMPT } from "./workflow/phase_5_compliance";
-import { PHASE_6_COMPLETION_PROMPT } from "./workflow/phase_6_completion";
 import { PHASE_AI_ATTEMPT_PROMPT } from "./workflow/phase_ai_attempt";
 import { MODULE_50_OUTPUTS_PROMPT } from "../audit_outputs/output_registry";
 
@@ -48,13 +47,6 @@ const PHASE5_OUTPUT_SCHEMA = `
 You must return a JSON object with a single key "statutory_compliance" containing { insurance, gst_reconciliation, income_tax }.
 See MODULE 50 for the full statutory_compliance structure. Apply Evidence Tier: Insurance = Tier 1 ONLY; GST = Tier 1/2; Income Tax = Tier 1/3.
 - gst_reconciliation: Use intake_summary.registered_for_gst (LOCKED). If false or absent → all amounts = 0, GST_Materiality = "N/A – Plan not registered for GST (per Step 0)". If true → full GST roll-forward.
-`;
-
-/** Phase 6 only output: return completion_outputs */
-const PHASE6_OUTPUT_SCHEMA = `
---- OUTPUT: Return ONLY completion_outputs ---
-You must return a JSON object with a single key "completion_outputs" containing { issue_register, boundary_disclosure }.
-See MODULE 50 for the full completion_outputs structure. Aggregate issues from audit findings; document unresolved areas.
 `;
 
 export function buildPhase5Prompt(): string {
@@ -118,18 +110,6 @@ ${targetsText}
     targetsBlock +
     MODULE_50_OUTPUTS_PROMPT +
     AI_ATTEMPT_OUTPUT_SCHEMA
-  );
-}
-
-export function buildPhase6Prompt(): string {
-  return (
-    HIERARCHY_INTRO +
-    EVIDENCE_RULES_PROMPT +
-    HIERARCHY_AFTER_EVIDENCE +
-    LOCKED_CONTEXT_INSTRUCTION +
-    PHASE_6_COMPLETION_PROMPT +
-    MODULE_50_OUTPUTS_PROMPT +
-    PHASE6_OUTPUT_SCHEMA
   );
 }
 

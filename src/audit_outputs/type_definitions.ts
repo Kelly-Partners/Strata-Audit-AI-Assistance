@@ -371,6 +371,27 @@ export interface TriageItem {
   comment: string;
   severity: "low" | "medium" | "critical";
   timestamp: number;
+  /** System-auto from Phase 2-5 non-reconciled; user = manually flagged */
+  source?: "system" | "user";
+}
+
+/** User resolution – Resolved / Flag / Override with required comment. Shared by Triage & AI Attempt. */
+export type ResolutionType = "Resolved" | "Flag" | "Override";
+
+export interface UserResolution {
+  itemKey: string;
+  resolutionType: ResolutionType;
+  comment: string;
+  resolvedAt: number;
+  resolvedBy?: string;
+}
+
+/** @deprecated Use UserResolution. Kept for backward compat. */
+export interface UserOverride {
+  itemKey: string;
+  signedOffAt: number;
+  signedOffBy?: string;
+  note?: string;
 }
 
 export type PlanStatus = "idle" | "processing" | "completed" | "failed";
@@ -393,5 +414,9 @@ export interface Plan {
   fileMeta?: FileMetaEntry[];
   result: AuditResponse | null;
   triage: TriageItem[];
+  /** User resolutions – Resolved/Flag/Override with comment. Shared by Triage & AI Attempt. Items move to Completion. */
+  user_resolutions?: UserResolution[];
+  /** @deprecated Use user_resolutions */
+  user_overrides?: UserOverride[];
   error: string | null;
 }

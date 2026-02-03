@@ -8,5 +8,6 @@ export {
   loadPlanFilesFromStorage,
   deletePlanFilesFromStorage,
   deletePlanFromFirestore,
+  subscribePlanDoc,
   type PlanDoc,
 } from "../src/services/planPersistence";
