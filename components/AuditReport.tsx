@@ -29,6 +29,10 @@ interface AuditReportProps {
   files: File[];
   triageItems: TriageItem[];
   onTriage: (item: TriageItem, action: 'add' | 'remove') => void;
+  /** When set, switch to this tab (e.g. after AI Attempt completes) */
+  focusTab?: 'docs' | 'levy' | 'assets' | 'expense' | 'gstCompliance' | 'aiAttempt' | 'completion';
+  /** Called after focusTab has been applied */
+  onFocusTabConsumed?: () => void;
 }
 
 // Forensic Cell Component - Upgraded for UI Spec + High Visibility
@@ -749,9 +753,16 @@ const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ statu
   );
 };
 
-export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageItems, onTriage }) => {
+export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageItems, onTriage, focusTab, onFocusTabConsumed }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'levy' | 'assets' | 'expense' | 'gstCompliance' | 'aiAttempt' | 'completion'>('docs');
   const [activeVerificationSteps, setActiveVerificationSteps] = useState<VerificationStep[] | null>(null);
+
+  useEffect(() => {
+    if (focusTab) {
+      setActiveTab(focusTab);
+      onFocusTabConsumed?.();
+    }
+  }, [focusTab, onFocusTabConsumed]);
   const [expenseForensic, setExpenseForensic] = useState<{ pillar: 'INV' | 'PAY' | 'AUTH' | 'FUND'; rowIndex: number; item: ExpenseSample } | null>(null);
   
   // ROBUST DEFAULTING to prevent crashes if JSON is partial or undefined
@@ -804,6 +815,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
             <span className="text-[11px] font-bold text-[#C5A059] uppercase tracking-widest">FY (Global)</span>
             <span className="text-[15px] font-bold text-black font-mono">{summary.financial_year || '–'}</span>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-[#C5A059] uppercase tracking-widest">Registered for GST</span>
+            <span className="text-[15px] font-bold text-black font-mono">{summary.registered_for_gst === true ? 'Yes' : summary.registered_for_gst === false ? 'No' : '–'}</span>
+          </div>
         </div>
         <div className="flex space-x-1 overflow-x-auto">
           <TabButton active={activeTab === 'docs'} onClick={() => setActiveTab('docs')}>
@@ -855,6 +870,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                 <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
                   <div className="text-[14px] text-[#C5A059] uppercase font-bold tracking-widest mb-2">FY (Global)</div>
                   <div className="text-[18px] font-bold text-black font-mono">{summary.financial_year || '–'}</div>
+                </div>
+                <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
+                  <div className="text-[14px] text-[#C5A059] uppercase font-bold tracking-widest mb-2">Registered for GST</div>
+                  <div className="text-[18px] font-bold text-black font-mono">{summary.registered_for_gst === true ? 'Yes' : summary.registered_for_gst === false ? 'No' : '–'}</div>
                 </div>
                 {summary.missing_critical_types && summary.missing_critical_types.length > 0 ? (
                    <div className="p-4 bg-red-50 border border-red-100 lg:col-span-1">
@@ -1222,7 +1241,9 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
 
                     {/* GST COMPONENT */}
                     <tr className="bg-gray-50/50">
-                        <td className="px-5 py-3 text-left font-bold text-gray-800 uppercase text-[14px] tracking-wide">GST Component</td>
+                        <td className="px-5 py-3 text-left font-bold text-gray-800 uppercase text-[14px] tracking-wide">
+                            GST Component{summary.registered_for_gst === false ? ' (Plan not registered for GST – per Step 0)' : ''}
+                        </td>
                         <td colSpan={4}></td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
@@ -1633,6 +1654,11 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
         {/* 1. GST – Table F.Master (priority) */}
         {data.statutory_compliance?.gst_reconciliation && (
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
+                {summary.registered_for_gst === false && (
+                    <div className="mb-4 py-2 px-4 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[13px] font-medium">
+                        Plan not registered for GST (per Step 0 Balance Sheet scan). GST reconciliation N/A – zeros shown.
+                    </div>
+                )}
                 <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
                     <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Table F.Master: GST Control Account Roll-Forward</h3>
                     <p className="text-xs text-gray-500 mt-1 uppercase tracking-wide">Opening + GST Raised - GST Paid + BAS Activity = Closing Balance</p>
@@ -1819,9 +1845,43 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
             </div>
         )}
 
-        {/* AI ATTEMPT – System Identified + Triage (待办) */}
+        {/* AI ATTEMPT – System Identified + Triage (待办) + Resolution Table */}
         {activeTab === 'aiAttempt' && (
             <div className="space-y-8">
+                {/* Part 0: AI Attempt Resolution Table (after run) */}
+                {data.ai_attempt_resolution_table && data.ai_attempt_resolution_table.length > 0 && (
+                    <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
+                        <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                            <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">AI Attempt Resolution</h3>
+                            <p className="text-xs text-gray-500 mt-1 uppercase tracking-wide">Summary of re-verification per target</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full text-left border border-gray-200">
+                                <thead className="bg-[#C5A059]/10 uppercase text-[12px] font-bold tracking-wider">
+                                    <tr>
+                                        <th className="px-4 py-3 border-b border-gray-200">Items</th>
+                                        <th className="px-4 py-3 border-b border-gray-200">Issue Identified</th>
+                                        <th className="px-4 py-3 border-b border-gray-200">AI Attempt Conduct</th>
+                                        <th className="px-4 py-3 border-b border-gray-200">Result</th>
+                                        <th className="px-4 py-3 border-b border-gray-200">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 text-[14px]">
+                                    {data.ai_attempt_resolution_table.map((row, idx) => (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 font-medium text-gray-900">{row.item}</td>
+                                            <td className="px-4 py-3 text-gray-700">{row.issue_identified}</td>
+                                            <td className="px-4 py-3 text-gray-600 italic">{row.ai_attempt_conduct}</td>
+                                            <td className="px-4 py-3 text-gray-700">{row.result}</td>
+                                            <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
                 {/* Part 1: System Identified (unreconciled, unverified, didn't match) */}
                 <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
                     <div className="border-b-2 border-[#C5A059] pb-3 mb-6">

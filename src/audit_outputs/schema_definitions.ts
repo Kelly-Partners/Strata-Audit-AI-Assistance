@@ -40,6 +40,7 @@ export const IntakeSummarySchema = z.object({
   agm_limit: z.number().optional(),
   boundary_defined: z.boolean().optional(),
   bs_extract_warning: z.string().optional(),
+  registered_for_gst: z.boolean().optional(),
 });
 
 export const LevyRecMasterSchema = z.object({

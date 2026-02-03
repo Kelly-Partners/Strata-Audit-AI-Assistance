@@ -30,6 +30,7 @@ export type {
   BoundaryEntry,
   CompletionOutputs,
   AuditResponse,
+  AiAttemptResolutionRow,
   TriageItem,
   PlanStatus,
   Plan,

@@ -30,6 +30,8 @@ export interface IntakeSummary {
   boundary_defined?: boolean;
   /** Set to "balance_check_failed" when Total Assets ≠ Total Liabilities + Total Equity (tolerance 1.00) */
   bs_extract_warning?: string;
+  /** True if Balance Sheet contains GST account(s) (e.g. GST Payable, GST Collected, GST Receivable); false otherwise. Used by Phase 2 & 5. */
+  registered_for_gst?: boolean;
 }
 
 /** Step 0: Location lock for a document */
@@ -348,6 +350,17 @@ export interface AuditResponse {
   expense_samples?: ExpenseSample[];
   statutory_compliance?: StatutoryCompliance;
   completion_outputs?: CompletionOutputs;
+  /** AI Attempt: Resolution table (Items, Issue identified, AI Attempt conduct, Result, Status) */
+  ai_attempt_resolution_table?: AiAttemptResolutionRow[];
+}
+
+/** AI Attempt Resolution row – one per target item re-verified */
+export interface AiAttemptResolutionRow {
+  item: string;
+  issue_identified: string;
+  ai_attempt_conduct: string;
+  result: string;
+  status: string;
 }
 
 export interface TriageItem {

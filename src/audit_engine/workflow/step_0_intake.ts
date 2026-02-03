@@ -89,5 +89,15 @@ D) BS EXTRACT (LOCKED SINGLE SOURCE OF TRUTH)
 
 10) Output bs_extract: { prior_year_label, current_year_label, rows: [...] }. Include every line item (Owners Equity, Assets, Liabilities).
 
+========================
+E) REGISTERED FOR GST (GLOBAL SETTING)
+========================
+
+11) **GST registration check (MANDATORY – use Balance Sheet only):**
+   - Scan bs_extract.rows for GST-related line_item names. Indicators include: "GST Payable", "GST Collected", "GST Receivable", "GST Clearing", "Net GST", "GST Input", "GST Output", or any line_item containing "GST".
+   - If at least one such row exists (even with $0 amount) → intake_summary.registered_for_gst = true.
+   - If no GST row exists → intake_summary.registered_for_gst = false.
+   - This is a global setting used by Phase 2 (Levy GST component) and Phase 5 (GST roll-forward). Phases MUST use this LOCKED value; they must NOT re-determine GST registration.
+
 END STEP 0
 `;

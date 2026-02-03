@@ -49,7 +49,8 @@ JSON SCHEMA (Step 0 only):
     "strata_plan": "String (e.g. SP 12345)",
     "financial_year": "String (e.g. 01/07/2024 - 30/06/2025 or DD/MM/YYYY)",
     "boundary_defined": "Boolean (optional – true when FY or BS mapping ambiguous)",
-    "bs_extract_warning": "String (optional – e.g. 'balance_check_failed')"
+    "bs_extract_warning": "String (optional – e.g. 'balance_check_failed')",
+    "registered_for_gst": "Boolean (optional – true if BS contains GST account(s); false otherwise)"
   },
   "core_data_positions": {
     "balance_sheet": { "doc_id": "String", "page_range": "String" } | null,

@@ -47,6 +47,7 @@ const PHASE5_OUTPUT_SCHEMA = `
 --- OUTPUT: Return ONLY statutory_compliance ---
 You must return a JSON object with a single key "statutory_compliance" containing { insurance, gst_reconciliation, income_tax }.
 See MODULE 50 for the full statutory_compliance structure. Insurance adequacy, GST roll-forward, Income Tax.
+- gst_reconciliation: Use intake_summary.registered_for_gst (LOCKED). If false or absent → all amounts = 0, GST_Materiality = "N/A – Plan not registered for GST (per Step 0)". If true → full GST roll-forward.
 `;
 
 /** Phase 6 only output: return completion_outputs */
@@ -68,30 +69,44 @@ export function buildPhase5Prompt(): string {
   );
 }
 
-/** AI Attempt output: return ai_attempt_updates (partial patch to merge) */
+/** AI Attempt output: ai_attempt_updates (patch) + ai_attempt_resolution_table (5-column summary) */
 const AI_ATTEMPT_OUTPUT_SCHEMA = `
---- OUTPUT: Return ONLY ai_attempt_updates ---
-You must return a JSON object with a single key "ai_attempt_updates" containing the re-verified items:
+--- OUTPUT: Return ai_attempt_updates AND ai_attempt_resolution_table ---
+You must return a JSON object with TWO keys:
+
+1) "ai_attempt_updates" – patch for merging (same structure as before):
 {
-  "ai_attempt_updates": {
-    "levy_reconciliation": { ... } | null,
-    "expense_updates": [ { "merge_key": "exp_0", "item": { GL_ID, GL_Date, GL_Payee, GL_Amount, Three_Way_Match, Fund_Integrity, Overall_Status, ... } } ] | null,
-    "balance_sheet_updates": [ { "line_item": "String", "fund": "String", ...BalanceSheetVerificationItem } ] | null,
-    "statutory_compliance": { insurance?, gst_reconciliation?, income_tax? } | null
-  }
+  "levy_reconciliation": { ... } | null,
+  "expense_updates": [ { "merge_key": "exp_0", "item": { ... } } ] | null,
+  "balance_sheet_updates": [ { "line_item", "fund", ... } ] | null,
+  "statutory_compliance": { ... } | null
 }
-- For each target phase, include ONLY the re-verified items. Omit phases with no targets.
-- expense_updates: merge_key = exp_N (N = index in original expense_samples). Include full item.
-- balance_sheet_updates: include line_item, fund, section for merge; full BalanceSheetVerificationItem.
-- levy_reconciliation / statutory_compliance: full object if any target in that phase.
+
+2) "ai_attempt_resolution_table" – MANDATORY summary table, one row per target:
+[
+  {
+    "item": "String – the unreconciled item or watchlist item (e.g. 'Levy Variance', 'exp_0: ABC Pty Ltd', 'Cash at Bank')",
+    "issue_identified": "String – from verification (e.g. 'VARIANCE', 'MISSING_BANK_STMT') or note from flag when added to watchlist",
+    "ai_attempt_conduct": "String – what you did (e.g. 'Re-traced PriorYear/CurrentYear from bs_extract; checked Admin/Capital receipts')",
+    "result": "String – outcome (e.g. 'Reconciled', 'Explained as rounding', 'Evidence still missing')",
+    "status": "String – final status (e.g. 'VERIFIED', 'VARIANCE', 'PASS', 'FAIL', 'MISSING_BANK_STMT')"
+  }
+]
+
+- Output ONE row per target in the TARGET LIST. Order matches target list.
+- item: concise identifier (phase + item, e.g. "Levy Variance", "exp_2: XYZ Solicitors")
+- issue_identified: what was wrong before (from Phase output or user triage note)
+- ai_attempt_conduct: what you checked / did during this AI Attempt
+- result: human-readable outcome
+- status: final status for merge (use existing status values)
 `;
 
-export function buildAiAttemptPrompt(targets: { phase: string; itemId: string; description: string }[]): string {
+export function buildAiAttemptPrompt(targets: { phase: string; itemId: string; description: string; source?: string }[]): string {
   const targetsText = targets.length === 0
     ? "(No targets – return empty ai_attempt_updates)"
-    : targets.map((t) => `- ${t.phase}: ${t.itemId} – ${t.description}`).join("\n");
+    : targets.map((t) => `- ${t.phase}: ${t.itemId} [${t.source || "system"}] – ${t.description}`).join("\n");
   const targetsBlock = `
---- TARGET LIST (re-verify ONLY these) ---
+--- TARGET LIST (re-verify ONLY these; [system] = System Identified, [triage] = Watchlist) ---
 ${targetsText}
 `;
   return (

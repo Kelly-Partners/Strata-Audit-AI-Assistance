@@ -160,11 +160,10 @@ export const PHASE_2_GST_RULES_PROMPT = `
 --- PHASE 2 – GST COMPONENT (STANDARD LEVIES ONLY) – MANDATORY ---
 RULE SET (ENFORCE): GST is applied only to (B1) STANDARD LEVIES. Administrative Fund and Capital / Sinking Fund calculated separately. You MUST apply this rule set.
 
-**GST Registration Determination (MANDATORY FIRST STEP):**
-- The plan's GST registration status MUST be assessed before applying any GST calculation.
-- Determine GST registration by checking for GST accounts or indicators in: General Ledger, Trial Balance, or Balance Sheet.
-- Indicators include: GST Payable, GST Collected, GST Receivable, GST Clearing, Net GST position disclosed. A GST line with $0 balance still counts as an indicator.
-- If no GST indicators exist → treat the plan as NOT registered for GST.
+**GST Registration (USE LOCKED intake_summary.registered_for_gst – MANDATORY):**
+- The plan's GST registration status is set during Step 0 by scanning the Balance Sheet for GST accounts (e.g. GST Payable, GST Collected, GST Receivable, GST Clearing).
+- You MUST use intake_summary.registered_for_gst from the LOCKED context. Do NOT re-determine GST registration from GL/TB/BS.
+- If registered_for_gst is false, undefined, or absent → treat as NOT registered for GST.
 
 **GST Application Rule:**
 - If NOT registered for GST → No GST component on standard levies. GST_Admin = 0, GST_Sink = 0, GST_Special = 0.
@@ -172,10 +171,6 @@ RULE SET (ENFORCE): GST is applied only to (B1) STANDARD LEVIES. Administrative 
 
 **Calculation Constraint – GST only on (B1) STANDARD LEVIES:**
 GST must NOT be applied to: Opening balances, Levies in arrears, Levies paid in advance, Special levies, Interest, Recoveries, or Adjustments.
-
-**Evidence Boundary:**
-- GST registration status is inferred only from GL / TB / Balance Sheet structure.
-- No reliance on: BAS lodgements, ATO records, GST reconciliation worksheets, Financial Statement notes alone. These are out of scope for Phase 2.
 `;
 
 /** 将 Phase 2 的 item 规则格式化为注入 system prompt 的文本 */

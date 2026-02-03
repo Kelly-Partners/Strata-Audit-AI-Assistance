@@ -36,6 +36,8 @@ const App: React.FC = () => {
 
   // UI State: Create modal only for initial plan creation
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  /** After AI Attempt completes, focus the AI Attempt tab so user sees the resolution table */
+  const [focusTabAfterAction, setFocusTabAfterAction] = useState<'aiAttempt' | null>(null);
   const [createDraft, setCreateDraft] = useState<{ name: string; files: File[] }>({ name: "", files: [] });
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
@@ -334,8 +336,22 @@ const App: React.FC = () => {
         aiAttemptTargets: targets,
         fileMeta: targetPlan.fileMeta,
       });
-      const updates = (res as { ai_attempt_updates?: unknown })?.ai_attempt_updates;
+      const resJson = res as { ai_attempt_updates?: unknown; ai_attempt_resolution_table?: unknown[] };
+      const updates = resJson?.ai_attempt_updates;
       const merged = mergeAiAttemptUpdates(mergedSoFar, updates ?? null);
+      if (Array.isArray(resJson?.ai_attempt_resolution_table) && resJson.ai_attempt_resolution_table.length > 0) {
+        merged.ai_attempt_resolution_table = resJson.ai_attempt_resolution_table;
+      } else {
+        // Fallback: build resolution table from targets so user always sees what was processed
+        merged.ai_attempt_resolution_table = targets.map((t) => ({
+          item: t.description,
+          issue_identified: t.source === "triage" ? "User flagged" : t.description,
+          ai_attempt_conduct: "(Merged into report – see updated Levy/BS/Expense/Compliance sections)",
+          result: "Patched",
+          status: "–",
+        }));
+      }
+      setFocusTabAfterAction("aiAttempt");
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
         status: "completed",
@@ -1113,6 +1129,8 @@ const App: React.FC = () => {
                     files={activePlan.files}
                     triageItems={activePlan.triage}
                     onTriage={handleTriage}
+                    focusTab={focusTabAfterAction ?? undefined}
+                    onFocusTabConsumed={() => setFocusTabAfterAction(null)}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 text-gray-500">

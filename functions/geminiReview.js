@@ -52,7 +52,7 @@ async function executeFullReview(opts) {
     expenses: "\"expense_samples\"",
     compliance: "\"statutory_compliance\"",
     completion: "\"completion_outputs\"",
-    aiAttempt: "\"ai_attempt_updates\"",
+    aiAttempt: "\"ai_attempt_updates\" and \"ai_attempt_resolution_table\"",
   };
   const userInstruction = isCall2Phase && previousAudit ?
     `
@@ -74,8 +74,11 @@ ${mode === "phase4" ? `
 ${mode === "completion" ? `
 5. [Phase 6 ONLY] Aggregate issue_register from levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance in the LOCKED context. Document boundary_disclosure from missing_critical_types, Not Resolved findings, boundary_defined, and bs_extract_warning.
 ` : ""}
+${mode === "compliance" ? `
+5. [Phase 5 ONLY] Use intake_summary.registered_for_gst from LOCKED context. If false or absent, output gst_reconciliation with all amounts = 0 and GST_Materiality = "N/A – Plan not registered for GST (per Step 0)".
+` : ""}
 ${mode === "aiAttempt" ? `
-5. [AI Attempt ONLY] Re-verify ONLY the target items listed in the system prompt. Use [ADDITIONAL] files as new evidence. Return ai_attempt_updates with only the re-verified sections.
+5. [AI Attempt ONLY] Re-verify ONLY the target items. Use [ADDITIONAL] files as new evidence. Return ai_attempt_updates (patch) AND ai_attempt_resolution_table (one row per target: item, issue_identified, ai_attempt_conduct, result, status).
 ` : ""}
 ` :
     previousAudit && !isStep0Only ?
