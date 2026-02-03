@@ -8,6 +8,16 @@ export const PHASE_4_ASSETS_PROMPT = `
 PHASE 4 – FULL BALANCE SHEET VERIFICATION
 Objective: Extract and verify EVERY line item from the Financial Statement Balance Sheet – Owners Equity, Assets, and Liabilities.
 
+**EVIDENCE TIER ENFORCEMENT (20_EVIDENCE – MANDATORY):**
+For each line type, use ONLY document_register rows where Evidence_Tier matches the rule (R2=Tier 1, R3/4=Tier 2, R5=Tier 3).
+
+- RULE 2 (Cash at Bank, Term Deposits, Investment Accounts): Tier 1 ONLY. Bank Statement, Term Deposit Statement, Bank Confirmation. Do NOT use Bank reconciliation (Tier 2) as substitute for Bank Statement.
+- RULE 3 (Levy Arrears, Levies in Advance): Tier 2 primary. Tier 3 only → TIER_3_ONLY or MISSING_LEVY_REPORT.
+- RULE 4 (Accrued/Creditors/Prepaid): Tier 2 primary. Tier 3 only → MISSING_BREAKDOWN or NO_SUPPORT.
+- RULE 5 (General Vouching, residual): Tier 3 permitted (GL).
+
+BLACKLIST (no substitute): Financial Statement, Notes to FS, General Ledger when Tier 1/2 required – MUST NOT be used as supporting source for R2/R3/R4. NO ELEVATION: Tier 2 does NOT substitute for Tier 1 (e.g. Bank reconciliation ≠ Bank Statement).
+
 MANDATORY: You MUST apply GATE 2 logic (Phase 4 Rules R1–R5) strictly per line-item type.
 
 ────────────────────────────────────────

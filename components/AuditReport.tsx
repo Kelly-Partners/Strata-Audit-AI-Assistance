@@ -1163,7 +1163,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                         </td>
                     </tr>
                     
-                    {/* B1 Sub-Total: 全部由 AI 输出，无 UI 计算；缺省时仅展示占位 */}
+                    {/* B1 Sub-Total: All from AI output, no UI calc; placeholder when missing */}
                     {(() => {
                       const mt = data.levy_reconciliation.master_table;
                       const emptyCell = { amount: 0, source_doc_id: '-', page_ref: '-', note: '—' as string };
@@ -1851,7 +1851,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
             </div>
         )}
 
-        {/* AI ATTEMPT – System Identified + Triage (待办) + Resolution Table */}
+        {/* AI ATTEMPT – System Identified + Triage (To-Do) + Resolution Table */}
         {activeTab === 'aiAttempt' && (
             <div className="space-y-8">
                 {/* Part 0: AI Attempt Resolution Table (after run) */}
@@ -1951,10 +1951,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({ data, files, triageIte
                     </div>
                 </div>
 
-                {/* Part 2: Triage (待办) - sync with sidebar triage */}
+                {/* Part 2: Triage (To-Do) - sync with sidebar triage */}
                 <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
                     <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
-                        <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Triage (待办)</h3>
+                        <h3 className="text-[16px] font-bold text-black uppercase tracking-wide">Triage (To-Do)</h3>
                         <p className="text-xs text-gray-500 mt-1 uppercase tracking-wide">User-flagged items from report</p>
                     </div>
                     {triageItems.length === 0 ? (

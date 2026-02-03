@@ -10,11 +10,13 @@ export const DOCUMENT_TYPES = [
   "General Ledger",
   "Financial Statement",
   "Bank Statement",
+  "Cash Management Report",
   "Tax Invoice",
   "Invoice",
   "Levy Position Report",
   "Insurance Policy",
   "Valuation Report",
+  "Creditors Report",
   "Other",
 ] as const;
 
@@ -32,15 +34,15 @@ A) INGEST AND REGISTER
 
 2) Construct document_register as a LIST (array). Each row = one file or one required placeholder.
    Required fields per row: Document_ID, Document_Type, Evidence_Tier, Document_Origin_Name, Document_Name, Page_Range, Relevant_Phases, Notes (optional).
-   - Document_Type MUST be exactly one of: AGM Minutes, Committee Minutes, General Ledger, Financial Statement, Bank Statement, Tax Invoice, Invoice, Levy Position Report, Insurance Policy, Valuation Report, Other.
-   - Evidence_Tier: Tier 1 (External), Tier 2 (Internal-Authoritative), Tier 3 (Internal-Generated).
+   - Document_Type MUST be exactly one of: AGM Minutes, Committee Minutes, General Ledger, Financial Statement, Bank Statement, Cash Management Report, Tax Invoice, Invoice, Levy Position Report, Insurance Policy, Valuation Report, Creditors Report, Other.
+   - **Evidence_Tier (STRICT TIERING – MANDATORY, from 20_EVIDENCE mapping):** You MUST assign Evidence_Tier per the DOCUMENT_TYPE → TIER mapping in 20_EVIDENCE. Bank Statement, Tax Invoice, Insurance Policy, Valuation Report → Tier 1. AGM Minutes, Committee Minutes, Cash Management Report, Levy Position Report, Invoice, Creditors Report → Tier 2. General Ledger, Financial Statement, Other → Tier 3. No exception. This becomes LOCKED for Phase 2/3/4/5.
    - Document_Origin_Name: Use the exact filename from the Uploaded File Manifest; if placeholder use "" or "N/A".
    - Page_Range: e.g. "All" or "Pages 1-5"; if placeholder use "" or "N/A".
 
 3) Coverage rules (MANDATORY):
    - Every Document_Type MUST appear at least ONE row (even if missing).
    - If multiple files match a type, create one row per file.
-   - Minimum rows = number of Document Types (11).
+   - Minimum rows = number of Document Types (13).
 
 4) Critical record check (MANDATORY):
    - If AGM Minutes OR General Ledger has no file, set intake_summary.missing_critical_types to list the missing types.

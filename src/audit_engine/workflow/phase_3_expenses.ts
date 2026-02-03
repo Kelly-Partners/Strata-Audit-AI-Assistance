@@ -6,6 +6,16 @@
 export const EXPENSE_RISK_FRAMEWORK = `
 [PHASE 3: RISK-BASED EXPENSE SAMPLING – EXPENSE_RISK_FRAMEWORK]
 
+**EVIDENCE TIER ENFORCEMENT (20_EVIDENCE – MANDATORY):**
+Use only document_register rows where Evidence_Tier matches the required tier for each evidence type.
+
+- **Invoice validity** → Tier 1 ONLY (Tax Invoice, supplier invoice – from document_register where Evidence_Tier = Tier 1).
+- **Payment evidence (PAID)** → Tier 1 ONLY (Bank Statement – from document_register where Evidence_Tier = Tier 1). Do NOT use Bank reconciliation or GL as substitute.
+- **Payment evidence (ACCRUED)** → Tier 2 ONLY (Creditors Report – from document_register where Evidence_Tier = Tier 2 and Document_Type = Creditors Report or equivalent Aged Payables report).
+- **Authority (Committee/AGM approval)** → Tier 2 ONLY (Committee Minutes, AGM/EGM Minutes – from document_register where Evidence_Tier = Tier 2).
+
+If the required tier evidence is not in document_register, set the appropriate status (e.g. BANK_STMT_MISSING, MINUTES_NOT_AVAILABLE, MISSING) – do NOT substitute with lower-tier evidence.
+
 STEP A: SCAN & SELECT (DO NOT PICK RANDOM ITEMS)
 1. MATERIALITY: Select ALL transactions with amount > $5,000 (or use intake_summary.manager_limit if higher).
 2. KEYWORDS: Select ANY transaction matching: "Legal", "Solicitor", "Lawyer", "Consultant", "Reimbursement", "Emergency", "Roof", "Lift", "Defect".
@@ -15,21 +25,21 @@ STEP A: SCAN & SELECT (DO NOT PICK RANDOM ITEMS)
 STEP B: THREE-WAY MATCH EXECUTION
 For each selected item, perform three checks and populate Three_Way_Match:
 
-1. INVOICE VALIDITY (invoice):
+1. INVOICE VALIDITY (invoice) – TIER 1 ONLY:
+   - Source: document_register rows with Evidence_Tier = Tier 1 (Tax Invoice, supplier invoice).
    - id: Invoice document ref (Doc_ID/Page). date: Invoice date. payee_match: GL Payee matches Invoice Payee. abn_valid: ABN present and 11 digits. addressed_to_strata: Invoice MUST be addressed to "The Owners - Strata Plan X" or equivalent OC; if addressed to Manager/Owner/Agent only = FAIL (addressed_to_strata = false).
 
 2. PAYMENT EVIDENCE (payment):
-   - Search Bank Statement for the specific amount on/after the GL Date (allow ±14 days). amount_match: Bank amount matches GL within ±1% or ±$10.
-   - IF FOUND in Bank -> status = "PAID", source_doc = Bank Statement ref.
-   - IF NOT in Bank -> Check Creditors/Accrued Expenses report for same Payee + Amount. If found -> status = "ACCRUED", creditors_ref = report ref.
+   - **PAID** – TIER 1 ONLY: Search Bank Statement (document_register where Evidence_Tier = Tier 1) for the specific amount on/after the GL Date (allow ±14 days). amount_match: Bank amount matches GL within ±1% or ±$10. IF FOUND in Bank -> status = "PAID", source_doc = Bank Statement ref. IF Bank Statement is missing or unreadable -> status = "BANK_STMT_MISSING" (do not use "MISSING").
+   - **ACCRUED** – TIER 2 ONLY: IF NOT in Bank -> Check Creditors/Accrued Expenses report (document_register where Evidence_Tier = Tier 2). If found -> status = "ACCRUED", creditors_ref = report ref.
    - IF NOT in Bank AND NOT in Creditors -> status = "MISSING".
-   - IF Bank Statement is missing or unreadable -> status = "BANK_STMT_MISSING" (do not use "MISSING").
+   - Do NOT use Tier 3 (GL, FS, Notes) as payment evidence.
 
-3. AUTHORITY TIERING (authority):
+3. AUTHORITY TIERING (authority) – COMMITTEE/AGM TIER 2 ONLY:
    - Use intake_summary.manager_limit and intake_summary.agm_limit when available. If not in intake_summary, infer from Agency Agreement / Minutes.
    - TIER 1 (MANAGER): Amount < manager_limit -> required_tier = "MANAGER", limit_applied = manager_limit, status = "AUTHORISED".
-   - TIER 2 (COMMITTEE): Amount >= manager_limit AND amount < agm_limit -> required_tier = "COMMITTEE". Search Committee Minutes for approval (Payee or Amount). If found -> minute_ref = "Committee Meeting DD/MM/YY Item X.X", status = "AUTHORISED". If Minutes missing -> status = "MINUTES_NOT_AVAILABLE". If not found in Minutes -> status = "UNAUTHORISED".
-   - TIER 3 (GENERAL_MEETING): Amount >= agm_limit OR "Legal/Loan/Special Levy" matters -> required_tier = "GENERAL_MEETING". Search AGM/EGM Minutes. If found -> minute_ref = "AGM DD/MM/YY Item X.X", status = "AUTHORISED". If not found -> status = "UNAUTHORISED".
+   - TIER 2 (COMMITTEE): Amount >= manager_limit AND amount < agm_limit -> required_tier = "COMMITTEE". Search Committee Minutes (document_register where Evidence_Tier = Tier 2) for approval (Payee or Amount). If found -> minute_ref = "Committee Meeting DD/MM/YY Item X.X", status = "AUTHORISED". If Minutes missing -> status = "MINUTES_NOT_AVAILABLE". If not found in Minutes -> status = "UNAUTHORISED".
+   - TIER 3 (GENERAL_MEETING): Amount >= agm_limit OR "Legal/Loan/Special Levy" matters -> required_tier = "GENERAL_MEETING". Search AGM/EGM Minutes (document_register where Evidence_Tier = Tier 2) for approval. If found -> minute_ref = "AGM DD/MM/YY Item X.X", status = "AUTHORISED". If not found -> status = "UNAUTHORISED".
    - Fail Authority Test if Committee/AGM approval required but no minute_ref found (status = "UNAUTHORISED").
 `;
 
@@ -44,6 +54,8 @@ STEP C: FUND INTEGRITY (ADMIN VS CAPITAL)
 export const PHASE_3_EXPENSES_PROMPT = `
 PHASE 3 – RISK-BASED EXPENSE AUDIT (v2.0)
 Objective: Execute MODULE 'EXPENSE_RISK_FRAMEWORK'. Do NOT sample randomly.
+
+**MANDATORY – Evidence Tier (20_EVIDENCE):** Use only document_register rows where Evidence_Tier matches the required tier for each evidence type. Invoice & Payment (PAID) = Tier 1. ACCRUED = Tier 2 (Creditors/Aged report). Committee/AGM Minutes = Tier 2.
 
 1. Scan the General Ledger (use core_data_positions.general_ledger) and build a **Target Sample List** from STEP A (Materiality + Keywords + Anomaly). Sort by risk: Legal/Consultant first, then >$5k, then keywords.
 

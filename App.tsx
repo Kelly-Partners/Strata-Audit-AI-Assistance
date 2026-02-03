@@ -225,7 +225,7 @@ const App: React.FC = () => {
     const targetPlan = plans.find((p) => p.id === planId);
     if (!targetPlan) return;
     if (!firebaseUser) {
-      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
     if (targetPlan.files.length === 0) {
@@ -234,7 +234,7 @@ const App: React.FC = () => {
     }
     const step0 = targetPlan.result;
     if (!step0?.document_register?.length || !step0?.intake_summary) {
-      updatePlan(planId, { error: "请先运行 Step 0 only，再执行 Call 2。" });
+      updatePlan(planId, { error: "Please run Step 0 first, then Call 2." });
       return;
     }
     updatePlan(planId, { status: "processing", error: null });
@@ -298,7 +298,7 @@ const App: React.FC = () => {
     const targetPlan = plans.find((p) => p.id === planId);
     if (!targetPlan) return;
     if (!firebaseUser) {
-      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
     if (targetPlan.files.length === 0) {
@@ -307,7 +307,7 @@ const App: React.FC = () => {
     }
     const mergedSoFar = targetPlan.result;
     if (!mergedSoFar?.document_register?.length || !mergedSoFar?.intake_summary) {
-      updatePlan(planId, { error: "请先完成 Step 0 和 Call 2，再执行 AI Attempt。" });
+      updatePlan(planId, { error: "Please complete Step 0 and Call 2 before running AI Attempt." });
       return;
     }
     const hasCall2 =
@@ -315,12 +315,12 @@ const App: React.FC = () => {
       (mergedSoFar.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
       (mergedSoFar.expense_samples?.length ?? 0) > 0;
     if (!hasCall2) {
-      updatePlan(planId, { error: "请先完成 Call 2，再执行 AI Attempt。" });
+      updatePlan(planId, { error: "Please complete Call 2 before running AI Attempt." });
       return;
     }
     const targets = buildAiAttemptTargets(mergedSoFar, targetPlan.triage);
     if (targets.length === 0) {
-      updatePlan(planId, { error: "没有待重核项。请在 AI Attempt 标签查看 System Identified Issues 或添加 Triage 待办后再运行。" });
+      updatePlan(planId, { error: "No items to re-verify. Add items from System Identified Issues or Triage in the AI Attempt tab, then run." });
       return;
     }
     updatePlan(planId, { status: "processing", error: null });
@@ -386,7 +386,7 @@ const App: React.FC = () => {
     const targetPlan = plans.find((p) => p.id === planId);
     if (!targetPlan) return;
     if (!firebaseUser) {
-      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
     if (targetPlan.files.length === 0) {
@@ -395,7 +395,7 @@ const App: React.FC = () => {
     }
     const mergedSoFar = targetPlan.result;
     if (!mergedSoFar?.document_register?.length || !mergedSoFar?.intake_summary) {
-      updatePlan(planId, { error: "请先完成 Step 0 和 Call 2，再执行 Phase 6。" });
+      updatePlan(planId, { error: "Please complete Step 0 and Call 2 before running Phase 6." });
       return;
     }
     const hasCall2 =
@@ -403,7 +403,7 @@ const App: React.FC = () => {
       (mergedSoFar.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
       (mergedSoFar.expense_samples?.length ?? 0) > 0;
     if (!hasCall2) {
-      updatePlan(planId, { error: "请先完成 Call 2（Levy、Balance Sheet、Expenses、Compliance），再执行 Phase 6。" });
+      updatePlan(planId, { error: "Please complete Call 2 (Levy, Balance Sheet, Expenses, Compliance) before running Phase 6." });
       return;
     }
     updatePlan(planId, { status: "processing", error: null });
@@ -452,7 +452,7 @@ const App: React.FC = () => {
     const targetPlan = plans.find(p => p.id === planId);
     if (!targetPlan) return;
     if (!firebaseUser) {
-      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
     if (targetPlan.files.length === 0) {
@@ -498,7 +498,7 @@ const App: React.FC = () => {
     if (!targetPlan) return;
 
     if (!firebaseUser) {
-      updatePlan(planId, { error: "请先登录后再执行审计。" });
+      updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
     if (targetPlan.files.length === 0) {
@@ -628,7 +628,7 @@ const App: React.FC = () => {
     e.preventDefault();
     setAuthError('');
     if (!loginEmail.trim() || !loginPassword) {
-      setAuthError(isSignUp ? '请输入邮箱与密码以注册' : '请输入邮箱与密码');
+      setAuthError(isSignUp ? 'Please enter email and password to sign up' : 'Please enter email and password');
       return;
     }
     setAuthLoading(true);
@@ -639,7 +639,7 @@ const App: React.FC = () => {
         await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
       }
     } catch (err: any) {
-      setAuthError(err?.message || (isSignUp ? '注册失败' : '登录失败'));
+      setAuthError(err?.message || (isSignUp ? 'Sign up failed' : 'Sign in failed'));
     } finally {
       setAuthLoading(false);
     }
@@ -651,7 +651,7 @@ const App: React.FC = () => {
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
     } catch (err: any) {
-      setAuthError(err?.message || 'Google 登录失败');
+      setAuthError(err?.message || 'Google sign-in failed');
     } finally {
       setAuthLoading(false);
     }
@@ -672,7 +672,7 @@ const App: React.FC = () => {
 
           {!hasValidFirebaseConfig && (
             <div className="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-sm text-amber-200 text-xs uppercase tracking-wide">
-              未检测到 Firebase 配置。请在项目根目录 .env 中填写 VITE_FIREBASE_* 后执行 npm run build 并重新部署。
+              Firebase not configured. Add VITE_FIREBASE_* to .env in project root, then run npm run build and redeploy.
             </div>
           )}
 
@@ -740,7 +740,7 @@ const App: React.FC = () => {
 
           <p className="mt-6 text-[10px] text-gray-600 text-center uppercase tracking-wide">
             Enable Email/Password and Google in Firebase Console → Authentication before first use.
-            {!hasValidFirebaseConfig && ' 若页面空白，请确认部署前 .env 已配置 VITE_FIREBASE_* 并重新 build 后部署。'}
+            {!hasValidFirebaseConfig && ' If the page is blank, ensure .env has VITE_FIREBASE_* configured and rebuild before deploy.'}
           </p>
         </div>
       </div>
@@ -918,7 +918,7 @@ const App: React.FC = () => {
            )}
            <div className="flex justify-between">
               <span>Kernel v2.0</span>
-              <span className={firebaseUser ? "text-green-600" : "text-gray-600"}>{firebaseUser ? "Cloud Ready" : "请先登录"}</span>
+              <span className={firebaseUser ? "text-green-600" : "text-gray-600"}>{firebaseUser ? "Cloud Ready" : "Sign in"}</span>
            </div>
         </div>
       </aside>

@@ -18,6 +18,15 @@ TARGET SOURCES
 Both receive AI Attempt Resolution. Use [ADDITIONAL] files when present as new evidence.
 
 ========================
+EVIDENCE TIER (20_EVIDENCE – MANDATORY FOR RE-VERIFICATION)
+========================
+Apply the same Evidence Tier rules as initial phases. Use ONLY document_register rows where Evidence_Tier matches the required tier for each evidence type. Do NOT substitute lower-tier evidence.
+- **Levy:** Admin_Fund_Receipts, Capital_Fund_Receipts = Tier 2 ONLY. PriorYear/CurrentYear = bs_extract.
+- **BS (phase4):** R2 = Tier 1; R3/4 = Tier 2; R5 = Tier 3. NO ELEVATION (Bank reconciliation ≠ Bank Statement).
+- **Expense:** Invoice & Payment PAID = Tier 1; ACCRUED = Tier 2 (Creditors Report); Authority = Tier 2 (Minutes).
+- **Compliance:** Insurance = Tier 1; GST = Tier 1/2; Income Tax = Tier 1/3.
+
+========================
 RESOLUTION PROTOCOL (per target)
 ========================
 

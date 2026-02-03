@@ -74,7 +74,7 @@ export async function callExecuteFullReview(
   } = options;
   const user = auth.currentUser;
   if (!user) {
-    throw new Error("请先登录后再执行审计。");
+    throw new Error("Please sign in to run the audit.");
   }
   const idToken = await user.getIdToken();
 
@@ -113,6 +113,8 @@ export async function callExecuteFullReview(
   const body = {
     files: filesPayload,
     expectedPlanId,
+    planId: expectedPlanId,
+    userId: user.uid,
     ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
     systemPrompt,
     fileManifest,
@@ -139,7 +141,7 @@ export async function callExecuteFullReview(
     } catch {
       errMessage = errText || res.statusText;
     }
-    throw new Error(`审计请求失败: ${errMessage}`);
+    throw new Error(`Audit request failed: ${errMessage}`);
   }
 
   const json = (await res.json()) as AuditResponse;

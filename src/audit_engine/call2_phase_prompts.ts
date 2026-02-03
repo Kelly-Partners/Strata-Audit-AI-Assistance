@@ -46,7 +46,7 @@ See MODULE 50 for the full expense_samples (Phase 3 v2) structure. Apply EXPENSE
 const PHASE5_OUTPUT_SCHEMA = `
 --- OUTPUT: Return ONLY statutory_compliance ---
 You must return a JSON object with a single key "statutory_compliance" containing { insurance, gst_reconciliation, income_tax }.
-See MODULE 50 for the full statutory_compliance structure. Insurance adequacy, GST roll-forward, Income Tax.
+See MODULE 50 for the full statutory_compliance structure. Apply Evidence Tier: Insurance = Tier 1 ONLY; GST = Tier 1/2; Income Tax = Tier 1/3.
 - gst_reconciliation: Use intake_summary.registered_for_gst (LOCKED). If false or absent → all amounts = 0, GST_Materiality = "N/A – Plan not registered for GST (per Step 0)". If true → full GST roll-forward.
 `;
 

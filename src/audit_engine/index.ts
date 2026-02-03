@@ -35,7 +35,7 @@ JSON SCHEMA (Step 0 only):
       "Document_ID": "String (e.g. Sys_001)",
       "Document_Origin_Name": "String (Exact filename from manifest)",
       "Document_Name": "String (Standardized Name)",
-      "Document_Type": "String (AGM Minutes | Committee Minutes | General Ledger | Financial Statement | Bank Statement | Tax Invoice | Invoice | Levy Position Report | Insurance Policy | Valuation Report | Other)",
+      "Document_Type": "String (AGM Minutes | Committee Minutes | General Ledger | Financial Statement | Bank Statement | Cash Management Report | Tax Invoice | Invoice | Levy Position Report | Insurance Policy | Valuation Report | Creditors Report | Other)",
       "Page_Range": "String (e.g. 'Pages 1-5' or 'All')",
       "Evidence_Tier": "String (Tier 1/Tier 2/Tier 3)",
       "Relevant_Phases": ["String"],

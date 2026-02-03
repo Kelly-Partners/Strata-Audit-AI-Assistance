@@ -68,17 +68,23 @@ INSTRUCTIONS:
 2. Use core_data_positions for document/page locations. Use intake_summary.financial_year as global FY.
 3. Execute ${call2PhaseLabels[mode] || mode} ONLY.
 4. Return ONLY ${call2ReturnKeys[mode] || mode}. No other keys.
+${mode === "levy" ? `
+5. [Phase 2 ONLY] Admin_Fund_Receipts and Capital_Fund_Receipts = Tier 2 ONLY. PriorYear/CurrentYear from bs_extract. Do NOT use GL as source for Effective_Levy_Receipts.
+` : ""}
 ${mode === "phase4" ? `
-5. [Phase 4 ONLY] bs_amount and line_item MUST be looked up from LOCKED bs_extract. supporting_amount from R2–R5 (Bank Stmt, Levy Report, etc.). Do NOT re-read Balance Sheet PDF.
+5. [Phase 4 ONLY] bs_amount and line_item MUST be looked up from LOCKED bs_extract. supporting_amount per Evidence Tier: R2=Tier 1, R3/4=Tier 2, R5=Tier 3. Do NOT re-read Balance Sheet PDF. NO ELEVATION (Bank reconciliation ≠ Bank Statement).
+` : ""}
+${mode === "expenses" ? `
+5. [Phase 3 ONLY] Apply Evidence Tier: Invoice & Payment PAID = Tier 1; ACCRUED = Tier 2 (Creditors Report); Authority = Tier 2 (Minutes). Do NOT substitute lower-tier evidence.
 ` : ""}
 ${mode === "completion" ? `
 5. [Phase 6 ONLY] Aggregate issue_register from levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance in the LOCKED context. Document boundary_disclosure from missing_critical_types, Not Resolved findings, boundary_defined, and bs_extract_warning.
 ` : ""}
 ${mode === "compliance" ? `
-5. [Phase 5 ONLY] Use intake_summary.registered_for_gst from LOCKED context. If false or absent, output gst_reconciliation with all amounts = 0 and GST_Materiality = "N/A – Plan not registered for GST (per Step 0)".
+5. [Phase 5 ONLY] Apply Evidence Tier: Insurance = Tier 1 ONLY; GST = Tier 1/2; Income Tax = Tier 1/3. Use intake_summary.registered_for_gst from LOCKED context. If false or absent, output gst_reconciliation with all amounts = 0 and GST_Materiality = "N/A – Plan not registered for GST (per Step 0)".
 ` : ""}
 ${mode === "aiAttempt" ? `
-5. [AI Attempt ONLY] Re-verify ONLY the target items. Use [ADDITIONAL] files as new evidence. Return ai_attempt_updates (patch) AND ai_attempt_resolution_table (one row per target: item, issue_identified, ai_attempt_conduct, result, status).
+5. [AI Attempt ONLY] Apply same Evidence Tier rules as initial phases. Re-verify ONLY the target items. Use [ADDITIONAL] files as new evidence. Return ai_attempt_updates (patch) AND ai_attempt_resolution_table (one row per target: item, issue_identified, ai_attempt_conduct, result, status).
 ` : ""}
 ` :
     previousAudit && !isStep0Only ?
