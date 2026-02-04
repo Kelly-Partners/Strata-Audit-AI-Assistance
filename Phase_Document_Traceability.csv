@@ -1,0 +1,66 @@
+Phase,Section,Item/Field,Source/Evidence,Document_Type,Whitelist,Blacklist,Definition_Source
+Step 0,Document Types,AGM Minutes,Tier 2,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Committee Minutes,Tier 2,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,General Ledger,Tier 3,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Financial Statement,Tier 3,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Bank Statement,Tier 1,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Cash Management Report,Tier 2,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Tax Invoice,Tier 1,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Invoice,Tier 2,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Levy Position Report,Tier 2,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Insurance Policy,Tier 1,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Valuation Report,Tier 1,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Creditors Report,Tier 2,,,,"step_0_intake; 20_evidence"
+Step 0,Document Types,Other,Tier 3,,,,"step_0_intake; 20_evidence"
+,,,,,,
+Step 0,Core Data Positions,balance_sheet,doc_id + page_range,,,Phase 2/4 bs_extract,step_0_intake
+Step 0,Core Data Positions,bank_statement,doc_id + page_range,,,Phase 3/4/5,step_0_intake
+Step 0,Core Data Positions,levy_report,doc_id + page_range,,,Phase 4 R3,step_0_intake
+Step 0,Core Data Positions,levy_receipts_admin,doc_id + page_range,,,Phase 2 Admin_Fund_Receipts,step_0_intake
+Step 0,Core Data Positions,levy_receipts_capital,doc_id + page_range,,,Phase 2 Capital_Fund_Receipts,step_0_intake
+Step 0,Core Data Positions,general_ledger,doc_id + page_range,,,Phase 3/4,step_0_intake
+Step 0,Core Data Positions,minutes_levy,doc_id + page_ref,,,Phase 2 FY / Old-New Rate,step_0_intake
+Step 0,Core Data Positions,minutes_auth,doc_id + page_ref,,,Phase 3 Committee/AGM auth,step_0_intake
+,,,,,,
+Phase 2,Levy Data,PriorYear_Arrears/Advance/CurrentYear_Arrears/Advance,bs_extract ONLY,,"","Levy Report; GL; FS; Notes",phase_2_revenue
+Phase 2,Levy Data,Financial Year (FY),minutes only,AGM Minutes; Committee Minutes,"AGM Minutes; Committee Minutes","FS; Audit Report body; Levy Register",phase_2_rules
+Phase 2,Levy Data,Old/New Rate + Rate adoption date,minutes only,AGM Minutes; Committee Minutes,"AGM Minutes; Committee Minutes","FS; Levy Register",phase_2_rules
+Phase 2,Levy Data,Admin_Fund_Receipts; Capital_Fund_Receipts,Tier 2 only,"Cash Management Report; Levy Position Report; Levy Receipts Report; Levy Arrears Report; Levy Summary Report","Cash Management Report; Levy Position Report; Levy Receipts Report; Levy Arrears Report; Levy Summary Report","GL; FS; Notes; Other (Tier 3)",phase_2_revenue
+Phase 2,Levy Data,GST_Admin; GST_Sink,registered_for_gst (Step 0),intake_summary,,Do not re-determine GST,phase_2_revenue
+,,,,,,
+Phase 3,Expense Evidence,Invoice validity,Tier 1 only,Tax Invoice; supplier invoice,Tax Invoice; supplier invoice,,phase_3_expenses
+Phase 3,Expense Evidence,Payment (PAID),Tier 1 only,Bank Statement,Bank Statement,Bank reconciliation; GL,phase_3_expenses
+Phase 3,Expense Evidence,Payment (ACCRUED),Tier 2 only,Creditors Report; Aged Payables,Creditors Report; Aged Payables,,phase_3_expenses
+Phase 3,Expense Evidence,Authority (Committee/AGM),Tier 2 only,Committee Minutes; AGM/EGM Minutes,Committee Minutes; AGM Minutes,,phase_3_expenses
+Phase 3,Expense Evidence,GL scan (target list),,general_ledger,core_data_positions,,phase_3_expenses
+Phase 3,Expense Evidence,manager_limit; agm_limit,intake_summary,Agency Agreement; Minutes,,phase_3_expenses
+,,,,,,
+Phase 4,RULE 1,Owners Funds at Start of Year,bs_extract,prior_year; current_year,,,phase_4_rules
+Phase 4,RULE 2,Cash at Bank; Term Deposits; Investment Accounts,Tier 1 only,Bank Statement; Term Deposit Statement; Bank Confirmation,Bank Statement; Term Deposit Statement; Bank Confirmation,Bank reconciliation (Tier 2); GL,phase_4_rules
+Phase 4,RULE 3,Levy Arrears; Levies in Advance,Tier 2 primary,Levy Position Report; Owner Balance; Aged Levies,Levy Position Report; Owner Balance; Aged Levies,,phase_4_rules
+Phase 4,RULE 4,Accrued; Creditors; Prepaid,Tier 2 primary,Breakdown report; Aged Creditors; Prepayment Schedule,Breakdown report; Aged Creditors; Prepayment Schedule,,phase_4_rules
+Phase 4,RULE 5,Sundry Debtors; Utility Deposits; Tax; Retained Earnings; Other,Tier 3,General Ledger,General Ledger,,phase_4_rules
+Phase 4,bs_amount,ALL line items,bs_extract ONLY,,,"GL; Levy Report; Bank Statement; any non-bs_extract",phase_4_assets
+,,,,,,
+Phase 5,Insurance,Insurance adequacy,Tier 1 only,Insurance Policy; Certificate of Currency; Valuation Report,Insurance Policy; Certificate; Valuation Report,Management summaries; GL; Notes,phase_5_compliance
+Phase 5,GST,GST roll-forward,Tier 1/2,BAS lodgement; Bank Statement (T1); internal GST schedules (T2),,,phase_5_compliance
+Phase 5,Income Tax,Income Tax,Tier 1 / Tier 3 fallback,ATO lodgement; Tax Return (T1); internal tax workpapers (T3),,,phase_5_compliance
+Phase 5,GST,registered_for_gst,intake_summary (Step 0),,,Do not re-determine,phase_5_compliance
+,,,,,,
+Phase 6,Completion,issue_register,Aggregate from Phase 2-5,,,,phase_6_completion
+Phase 6,Completion,boundary_disclosure,missing_critical_types; boundary_defined; bs_extract_warning,,,,phase_6_completion
+,,,,,,
+AI Attempt,Levy,Same as Phase 2,Tier 2 + bs_extract,,,,phase_ai_attempt
+AI Attempt,BS,Same as Phase 4,R2=Tier 1; R3/4=Tier 2; R5=Tier 3,,,,phase_ai_attempt
+AI Attempt,Expense,Same as Phase 3,Invoice/PAID=Tier 1; ACCRUED=Tier 2; Authority=Tier 2,,,,phase_ai_attempt
+AI Attempt,Compliance,Same as Phase 5,Insurance=Tier 1; GST=Tier 1/2; Income Tax=Tier 1/3,,,,phase_ai_attempt
+,,,,,,
+20_EVIDENCE,BLACKLIST,When Tier 1/2 required,Financial Statement,,,PROHIBITED as Supporting Source,20_evidence_rules
+20_EVIDENCE,BLACKLIST,When Tier 1/2 required,Notes to the Financial Statement,,,PROHIBITED as Supporting Source,20_evidence_rules
+20_EVIDENCE,BLACKLIST,When Tier 1 required,General Ledger,,,PROHIBITED as Supporting Source,20_evidence_rules
+20_EVIDENCE,NO ELEVATION,R2 Cash at Bank,Bank reconciliation,,,Cannot substitute for Bank Statement,20_evidence_rules
+20_EVIDENCE,BLACKLIST,Phase 5 Insurance,Management summaries; GL; Notes,,,PROHIBITED,20_evidence_rules
+20_EVIDENCE,BLACKLIST,Phase 2 Admin/Capital Receipts,GL; FS; Notes; Other (Tier 3),,,PROHIBITED,phase_2_rules
+,,,,,,
+Phase 2,Receipts Whitelist,Preferred,Cash Management Report,,,,"phase_2_rules"
+Phase 2,Receipts Whitelist,Whitelist,"Cash Management Report; Levy Position Report; Levy Receipts Report; Levy Arrears Report; Levy Summary Report",,,,"phase_2_rules"

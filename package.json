@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "verify-prompts": "node scripts/verify-prompts.js",
-    "generate-schema": "tsx scripts/generate-audit-schema.ts"
+    "generate-schema": "tsx scripts/generate-audit-schema.ts",
+    "generate-traceability-excel": "node scripts/generate-phase-traceability-excel.cjs"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",
@@ -22,6 +23,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "tsx": "^4.19.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "xlsx": "^0.18.5"
   }
 }

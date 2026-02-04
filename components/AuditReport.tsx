@@ -72,10 +72,10 @@ const ForensicCell: React.FC<{
     doc = safeDocs.find(d => d.Document_Origin_Name === val.source_doc_id || d.Document_Name === val.source_doc_id);
   }
 
-  // 3. Find the actual physical File object
-  const targetFile = doc 
-    ? files.find(f => f.name === doc.Document_Origin_Name) 
-    : files.find(f => f.name === val?.source_doc_id);
+  // 3. Find the actual physical File object (use findFileByName for storage prefix compatibility)
+  const targetFile = doc
+    ? findFileByName(files, doc.Document_Origin_Name ?? '')
+    : findFileByName(files, val?.source_doc_id ?? '');
 
   // Safe val check
   if (!val) return <span className="text-gray-300">-</span>;
@@ -361,10 +361,29 @@ function resolveDocForExpense(safeDocs: DocumentEntry[], sourceDocId: string): D
   return doc;
 }
 
-/** Find File by name (exact then case-insensitive) */
+/** Normalize for match: strip N_ prefix, collapse spaces/underscores. */
+function norm(name: string): string {
+  return name.replace(/^\d+_/, "").replace(/[\s_]+/g, "_").toLowerCase().trim();
+}
+
+/**
+ * Find File by name. Handles:
+ * - Exact match, case-insensitive
+ * - Storage prefix: "1_Invoice.pdf" vs "Invoice.pdf"
+ * - Spaces/underscores: "Financial Report.pdf" vs "Financial_Report.pdf" (index 0 from safeFileName)
+ */
 function findFileByName(files: File[], name: string): File | undefined {
-  if (!name || name === 'N/A' || name === '') return undefined;
-  return files.find(f => f.name === name) ?? files.find(f => f.name.toLowerCase() === name.toLowerCase());
+  if (!name || name === "N/A" || name === "") return undefined;
+  const n = name.trim();
+  const nLower = n.toLowerCase();
+  const nNorm = norm(n);
+  return (
+    files.find((f) => f.name === n) ??
+    files.find((f) => f.name.toLowerCase() === nLower) ??
+    files.find((f) => f.name.replace(/^\d+_/, "") === n) ??
+    files.find((f) => f.name.replace(/^\d+_/, "").toLowerCase() === nLower) ??
+    (nNorm ? files.find((f) => norm(f.name) === nNorm) : undefined)
+  );
 }
 
 /** Forensic popover for expense INV/PAY/AUTH/FUND – same layout as ForensicCell: Source Document, Doc ID, Extracted, Context/Note, View in PDF */
