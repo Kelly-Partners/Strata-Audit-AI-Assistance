@@ -82,6 +82,41 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  /** Resizable sidebar width (px). Persisted to localStorage. */
+  const SIDEBAR_MIN = 200;
+  const SIDEBAR_MAX = 480;
+  const SIDEBAR_DEFAULT = 288; // w-72
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const s = localStorage.getItem("strata-sidebar-width");
+      const n = s ? parseInt(s, 10) : SIDEBAR_DEFAULT;
+      return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
+    } catch { return SIDEBAR_DEFAULT; }
+  });
+  const isResizing = useRef(false);
+  useEffect(() => {
+    const save = (w: number) => {
+      try { localStorage.setItem("strata-sidebar-width", String(w)); } catch { /* ignore */ }
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, e.clientX));
+      setSidebarWidth(w);
+      save(w);
+    };
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setFirebaseUser(u));
     return () => unsub();
@@ -816,8 +851,8 @@ const App: React.FC = () => {
         </div>
       )}
       
-      {/* --- SIDEBAR (deep gray #1a1a1a for long-term reading comfort) --- */}
-      <aside className="w-72 bg-[#1a1a1a] text-white flex flex-col shrink-0 border-r border-gray-800 relative z-20 shadow-xl">
+      {/* --- SIDEBAR (resizable, deep gray #1a1a1a) --- */}
+      <aside className="bg-[#1a1a1a] text-white flex flex-col shrink-0 border-r border-gray-800 relative z-20 shadow-xl" style={{ width: sidebarWidth }}>
         {/* Brand: Kelly+Partners logo + user name (right of logo when logged in) */}
         <div className="p-6 border-b border-white/20">
            <div className="flex items-center gap-3 min-w-0">
@@ -922,7 +957,6 @@ const App: React.FC = () => {
                                      >
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
                                      </button>
-                                     <button onClick={(e) => { e.stopPropagation(); handleTriage(t, "remove"); }} className="shrink-0 opacity-60 hover:opacity-100 text-white/60 hover:text-red-300 text-caption p-0.5">✕</button>
                                    </div>
                                  ))}
                              </div>
@@ -958,8 +992,21 @@ const App: React.FC = () => {
         </div>
       </aside>
 
+      {/* Resize handle */}
+      <div
+        onMouseDown={() => {
+          isResizing.current = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        }}
+        className="w-1 shrink-0 bg-gray-300 hover:bg-[#004F9F] cursor-col-resize transition-colors group hover:w-1.5 flex items-center justify-center"
+        title="Drag to resize"
+      >
+        <div className="w-0.5 h-12 bg-gray-400 group-hover:bg-[#004F9F]/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+
       {/* --- MAIN CONTENT AREA --- */}
-      <main className="flex-1 overflow-y-auto h-full relative scroll-smooth bg-[#FAFAFA]">
+      <main className="flex-1 min-w-0 overflow-y-auto h-full relative scroll-smooth bg-[#FAFAFA]">
         
         {/* --- VIEW: PLAN DASHBOARD (When no active plan) --- */}
         {!activePlanId && (
