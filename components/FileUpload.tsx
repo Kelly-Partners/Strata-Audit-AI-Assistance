@@ -34,7 +34,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
         >
           <div className="flex flex-col items-center justify-center pt-5 pb-6">
             <svg
-              className="w-10 h-10 mb-4 text-gray-400 group-hover:text-[#C5A059] transition-colors"
+              className="w-10 h-10 mb-4 text-gray-400 group-hover:text-[#004F9F] transition-colors"
               aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -49,7 +49,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
               />
             </svg>
             <p className="mb-2 text-caption text-gray-600 font-bold uppercase tracking-wider">
-              <span className="text-[#C5A059]">CLICK TO UPLOAD</span> EVIDENCE
+              <span className="text-[#004F9F]">CLICK TO UPLOAD</span> EVIDENCE
             </p>
             <p className="text-micro text-gray-400 uppercase tracking-widest">PDF, XLSX, CSV (Max 10MB)</p>
           </div>
@@ -74,10 +74,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
             return (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded shadow-sm hover:border-[#C5A059] transition-colors group"
+                className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded shadow-sm hover:border-[#004F9F] transition-colors group"
               >
                 <div className="flex items-center space-x-3 flex-1 min-w-0">
-                  <span className="text-micro bg-[#C5A059] text-black px-1.5 py-0.5 font-bold uppercase tracking-widest rounded-sm shrink-0">
+                  <span className="text-micro bg-[#004F9F] text-white px-1.5 py-0.5 font-bold uppercase tracking-widest rounded-sm shrink-0">
                     {file.name.split('.').pop()?.toUpperCase()}
                   </span>
                   <div className="flex flex-col min-w-0 flex-1">

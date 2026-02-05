@@ -13,6 +13,24 @@ import type { User } from 'firebase/auth';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { Plan, PlanStatus, TriageItem, UserResolution, ResolutionType, FileMetaEntry } from './types';
 
+/** Format user display name: First Last, capitalize each word. Use displayName or parse from email. */
+function formatDisplayName(user: User): string {
+  if (user.displayName?.trim()) {
+    return user.displayName
+      .split(/\s+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+  const beforeAt = user.email?.split("@")[0] ?? "";
+  if (!beforeAt) return user.uid.slice(0, 8);
+  return beforeAt
+    .replace(/[._-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ") || beforeAt;
+}
+
 /** Migrate user_overrides to user_resolutions for backward compat */
 function migrateResolutions(
   resolutions: UserResolution[] | undefined,
@@ -693,14 +711,15 @@ const App: React.FC = () => {
 
   if (!firebaseUser) {
     return (
-      <div className="flex h-screen bg-[#111] text-white font-sans items-center justify-center p-4">
+      <div className="flex h-screen bg-[#1a1a1a] text-white font-sans items-center justify-center p-4">
         <div className="w-full max-w-[400px]">
-          {/* Brand：与侧栏一致 */}
-          <div className="flex items-center gap-3 justify-center mb-10">
-            <div className="h-10 w-10 bg-[#C5A059] flex items-center justify-center font-bold text-black rounded-sm shrink-0 text-section">S</div>
-            <div className="text-left">
-              <h1 className="text-body font-bold tracking-widest uppercase leading-none">Strata</h1>
-              <h1 className="text-body font-bold tracking-widest uppercase text-[#C5A059] leading-none">Audit Engine</h1>
+          {/* Brand: Kelly+Partners */}
+          <div className="flex flex-col items-center justify-center mb-10">
+            <img src="/logo.png?v=2" alt="Kelly+Partners" className="h-14 w-auto object-contain mb-3" onError={(e) => { const t = e.target as HTMLImageElement; t.style.display = 'none'; const fb = t.nextElementSibling as HTMLElement; if (fb) fb.classList.remove('hidden'); }} />
+            <div className="hidden flex flex-col items-center text-center">
+              <span className="block text-section font-bold tracking-tight">KELLY+</span>
+              <span className="block text-section font-bold tracking-tight">PARTNERS</span>
+              <span className="block text-caption tracking-widest uppercase mt-1 opacity-90">Strata Audit</span>
             </div>
           </div>
 
@@ -710,29 +729,29 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* Sign In 卡片 */}
-          <div className="bg-[#1a1a1a] border border-gray-800 rounded-sm p-8 shadow-xl">
-            <h2 className="text-caption font-bold text-gray-400 uppercase tracking-widest mb-6">Sign In</h2>
+          {/* Sign In card */}
+          <div className="bg-white text-[#111] border border-gray-200 rounded-sm p-8 shadow-xl">
+            <h2 className="text-caption font-bold text-gray-600 uppercase tracking-widest mb-6">Sign In</h2>
 
             <form onSubmit={handleEmailAuth} className="space-y-4">
               <div>
-                <label className="block text-micro font-bold text-gray-500 uppercase tracking-wider mb-2">Email</label>
+                <label className="block text-micro font-bold text-gray-600 uppercase tracking-wider mb-2">Email</label>
                 <input
                   type="email"
                   value={loginEmail}
                   onChange={(e) => { setLoginEmail(e.target.value); setAuthError(''); }}
                   placeholder="your@email.com"
-                  className="w-full px-4 py-3 bg-[#0d0d0d] border border-gray-700 rounded-sm text-body text-white placeholder-gray-500 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-sm text-body text-[#111] placeholder-gray-500 focus:border-[#004F9F] focus:ring-1 focus:ring-[#004F9F] focus:outline-none transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-micro font-bold text-gray-500 uppercase tracking-wider mb-2">Password</label>
+                <label className="block text-micro font-bold text-gray-600 uppercase tracking-wider mb-2">Password</label>
                 <input
                   type="password"
                   value={loginPassword}
                   onChange={(e) => { setLoginPassword(e.target.value); setAuthError(''); }}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-[#0d0d0d] border border-gray-700 rounded-sm text-body text-white placeholder-gray-500 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-sm text-body text-[#111] placeholder-gray-500 focus:border-[#004F9F] focus:ring-1 focus:ring-[#004F9F] focus:outline-none transition-colors"
                 />
               </div>
               {authError && (
@@ -741,7 +760,7 @@ const App: React.FC = () => {
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#C5A059] hover:bg-[#A08040] disabled:opacity-50 text-black font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-caption transition-colors"
+                className="w-full bg-[#004F9F] hover:bg-[#003d7a] disabled:opacity-50 text-white font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-caption transition-colors"
               >
                 {authLoading ? '…' : isSignUp ? 'Create Account' : 'Sign In'}
               </button>
@@ -750,29 +769,29 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
-              className="mt-3 text-label text-gray-500 hover:text-[#C5A059] transition-colors uppercase tracking-wide"
+              className="mt-3 text-label text-gray-600 hover:text-[#004F9F] transition-colors uppercase tracking-wide"
             >
               {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Create one'}
             </button>
 
             <div className="flex items-center gap-4 my-6">
-              <div className="flex-1 h-px bg-gray-800" />
-              <span className="text-micro font-bold text-gray-600 uppercase tracking-widest">or</span>
-              <div className="flex-1 h-px bg-gray-800" />
+              <div className="flex-1 h-px bg-gray-300" />
+              <span className="text-micro font-bold text-gray-500 uppercase tracking-widest">or</span>
+              <div className="flex-1 h-px bg-gray-300" />
             </div>
 
             <button
               type="button"
               onClick={handleGoogleSignIn}
               disabled={authLoading}
-              className="w-full border border-gray-600 hover:border-[#C5A059] text-gray-300 hover:text-white font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-caption transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full border border-gray-400 hover:border-[#004F9F] text-gray-700 hover:text-[#004F9F] font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-caption transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
               Sign in with Google
             </button>
           </div>
 
-          <p className="mt-6 text-micro text-gray-600 text-center uppercase tracking-wide">
+          <p className="mt-6 text-micro text-white/80 text-center uppercase tracking-wide">
             Enable Email/Password and Google in Firebase Console → Authentication before first use.
             {!hasValidFirebaseConfig && ' If the page is blank, ensure .env has VITE_FIREBASE_* configured and rebuild before deploy.'}
           </p>
@@ -786,33 +805,41 @@ const App: React.FC = () => {
       
       {/* --- GLOBAL DRAG OVERLAY --- */}
       {isDragging && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in m-4 rounded-xl border-4 border-dashed border-[#C5A059] shadow-2xl pointer-events-none">
-           <div className="bg-[#C5A059] p-6 rounded-full mb-6 shadow-lg shadow-[#C5A059]/50 animate-bounce">
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center animate-fade-in m-4 rounded-xl border-4 border-dashed border-[#004F9F] shadow-2xl pointer-events-none">
+           <div className="bg-[#004F9F] p-6 rounded-full mb-6 shadow-lg shadow-[#004F9F]/50 animate-bounce">
               <svg className="w-16 h-16 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4 4m4-4v12"></path></svg>
            </div>
            <h2 className="text-title font-bold text-white uppercase tracking-widest mb-2">
              {activePlanId ? "Add Evidence to Plan" : "Create New Audit Plan"}
            </h2>
-           <p className="text-[#C5A059] font-medium tracking-wide">Release files to ingest</p>
+           <p className="text-[#004F9F] font-medium tracking-wide">Release files to ingest</p>
         </div>
       )}
       
-      {/* --- SIDEBAR NAVIGATION --- */}
-      <aside className="w-72 bg-[#111] text-white flex flex-col shrink-0 border-r border-gray-800 relative z-20 shadow-xl">
-        {/* Brand */}
-        <div className="p-6 border-b border-gray-800 flex items-center gap-3">
-           <div className="h-8 w-8 bg-[#C5A059] flex items-center justify-center font-bold text-black rounded-sm shrink-0">S</div>
-           <div>
-             <h1 className="text-body font-bold tracking-widest uppercase leading-none">Strata</h1>
-             <h1 className="text-body font-bold tracking-widest uppercase text-[#C5A059] leading-none">Audit Engine</h1>
+      {/* --- SIDEBAR (deep gray #1a1a1a for long-term reading comfort) --- */}
+      <aside className="w-72 bg-[#1a1a1a] text-white flex flex-col shrink-0 border-r border-gray-800 relative z-20 shadow-xl">
+        {/* Brand: Kelly+Partners logo + user name (right of logo when logged in) */}
+        <div className="p-6 border-b border-white/20">
+           <div className="flex items-center gap-3 min-w-0">
+             <img src="/logo.png?v=3" alt="Kelly+Partners" className="h-14 w-auto object-contain shrink-0" style={{ maxWidth: "220px" }} onError={(e) => { const t = e.target as HTMLImageElement; t.style.display = "none"; const fb = t.nextElementSibling as HTMLElement; if (fb) fb.classList.remove("hidden"); }} />
+             <div className="hidden flex flex-col items-start text-left shrink-0">
+               <span className="block text-heading font-bold tracking-tight leading-tight">KELLY+</span>
+               <span className="block text-heading font-bold tracking-tight leading-tight">PARTNERS</span>
+               <span className="block text-caption font-normal tracking-widest uppercase mt-0.5 opacity-90">Strata Audit</span>
+             </div>
+             {firebaseUser && (
+               <span className="text-body font-semibold text-white/90 truncate min-w-0 ml-auto border border-white/30 rounded-sm px-2.5 py-1 shrink-0" title={firebaseUser.displayName ?? firebaseUser.email ?? undefined}>
+                 {formatDisplayName(firebaseUser)}
+               </span>
+             )}
            </div>
         </div>
 
         {/* Global Nav */}
-        <div className="px-4 py-4 border-b border-gray-800">
+        <div className="px-4 py-4 border-b border-white/20">
              <button 
                onClick={() => setActivePlanId(null)}
-               className={`w-full flex items-center gap-3 px-4 py-3 rounded-sm transition-all text-body font-semibold ${activePlanId === null ? 'bg-[#C5A059] text-black shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+               className={`w-full flex items-center gap-3 px-4 py-3 rounded-sm transition-all text-body font-semibold ${activePlanId === null ? 'bg-white text-[#004F9F] shadow-lg' : 'text-white/80 hover:text-white hover:bg-white/10'}`}
              >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
                 Plan Dashboard
@@ -825,17 +852,17 @@ const App: React.FC = () => {
            {!activePlan && (
              <div className="mb-6">
                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-body font-semibold text-gray-500">Your Projects</h3>
-                  <span className="text-body font-semibold bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{plans.length}</span>
+                  <h3 className="text-body font-semibold text-white/70">Your Projects</h3>
+                  <span className="text-body font-semibold bg-white/20 text-white px-1.5 py-0.5 rounded">{plans.length}</span>
                </div>
                
                <div className="space-y-1">
-                  {plans.length === 0 && <div className="text-body text-gray-600 italic py-2">No active plans.</div>}
+                  {plans.length === 0 && <div className="text-body text-white/60 italic py-2">No active plans.</div>}
                   {plans.map(plan => (
                      <div 
                        key={plan.id}
                        onClick={() => setActivePlanId(plan.id)}
-                       className={`group flex items-center gap-3 p-2 rounded cursor-pointer transition-colors border-l-2 border-transparent hover:bg-white/5`}
+                       className={`group flex items-center gap-3 p-2 rounded cursor-pointer transition-colors border-l-2 border-transparent hover:bg-white/10`}
                      >
                         <div className="relative">
                            <div className={`w-2 h-2 rounded-full ${
@@ -845,7 +872,7 @@ const App: React.FC = () => {
                            }`}></div>
                         </div>
                         <div className="flex-1 overflow-hidden">
-                           <div className={`text-body font-semibold leading-tight truncate text-gray-400 group-hover:text-gray-200`}>{plan.name}</div>
+                           <div className={`text-body font-semibold leading-tight truncate text-white/80 group-hover:text-white`}>{plan.name}</div>
                         </div>
                      </div>
                   ))}
@@ -856,16 +883,16 @@ const App: React.FC = () => {
            {/* TRIAGE SECTION (Only if Plan Active) */}
            {activePlan && (
              <div className="animate-fade-in">
-                <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
-                   <h3 className="text-body font-semibold text-[#C5A059]">Triage Dashboard</h3>
-                   <span className="text-body font-semibold text-white bg-red-600/20 px-1.5 rounded text-red-500">{activePlan.triage.length}</span>
+                <div className="flex items-center justify-between mb-4 border-b border-white/20 pb-2">
+                   <h3 className="text-body font-semibold text-white">Triage Dashboard</h3>
+                   <span className="text-body font-semibold bg-white/20 text-white px-1.5 rounded">{activePlan.triage.length}</span>
                 </div>
                 
                 {activePlan.triage.length === 0 ? (
                     <div className="text-center py-10 opacity-30">
                        <svg className="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                       <p className="text-body font-semibold">All Clean</p>
-                       <p className="text-body text-gray-400">System items auto-fill after Call 2; hover rows to flag</p>
+                       <p className="text-body font-semibold text-white">All Clean</p>
+                       <p className="text-body text-white/60">System items auto-fill after Call 2; hover rows to flag</p>
                     </div>
                 ) : (
                     <div className="space-y-2">
@@ -876,43 +903,28 @@ const App: React.FC = () => {
                          const focusTab = tab === "assets" ? "assets" : tab === "levy" ? "levy" : tab === "gstCompliance" ? "gstCompliance" : "expense";
                          return (
                            <details key={tab} className="group/details">
-                             <summary className="cursor-pointer text-body font-semibold text-[#C5A059] flex items-center justify-between list-none py-1">
+                             <summary className="cursor-pointer text-body font-semibold text-white flex items-center justify-between list-none py-1">
                                <span>{areaName} ({items.length})</span>
-                               <span className="text-gray-500 group-open/details:rotate-180 transition-transform">▾</span>
+                               <span className="text-white/60 group-open/details:rotate-180 transition-transform">▾</span>
                              </summary>
                              <div className="ml-2 mt-1 space-y-0.5">
-                               {items.map((t) => {
-                                 const res = getResolution(t, activePlan.user_resolutions ?? []);
-                                 return (
-                                   <div key={t.id} className={`flex items-center gap-1 py-1 px-1.5 rounded group/item border-l-2 ${
-                                     res ? "border-green-500 bg-green-900/10" :
+                               {items.map((t) => (
+                                   <div key={t.id} className={`flex items-center gap-2 py-1.5 px-2 rounded group/item border-l-2 ${
                                      t.severity === "critical" ? "border-red-500 bg-red-900/20" :
                                      t.severity === "medium" ? "border-yellow-500 bg-yellow-900/10" :
                                      "border-blue-400 bg-blue-900/10"
                                    }`}>
                                      <div className="flex-1 min-w-0 truncate text-caption font-medium text-gray-200">{t.title}</div>
-                                     <button onClick={(e) => { e.stopPropagation(); setFocusTabRequest(focusTab); }} className="shrink-0 opacity-0 group-hover/item:opacity-100 text-caption text-[#C5A059] hover:text-white px-1" title="Go to">→</button>
-                                     {!res ? (
-                                       <select
-                                         value=""
-                                         onChange={(e) => {
-                                           const v = e.target.value as ResolutionType | "";
-                                           if (v) { setMarkOffModal({ item: t, resolutionType: v }); e.target.value = ""; }
-                                         }}
-                                         className="shrink-0 opacity-0 group-hover/item:opacity-100 text-micro bg-gray-800 text-gray-300 border border-gray-600 rounded px-1 py-0.5"
-                                       >
-                                         <option value="">Mark</option>
-                                         <option value="Resolved">Resolved</option>
-                                         <option value="Flag">Flag</option>
-                                         <option value="Override">Override</option>
-                                       </select>
-                                     ) : (
-                                       <span className="shrink-0 text-micro text-green-400">{res.resolutionType}</span>
-                                     )}
-                                     <button onClick={(e) => { e.stopPropagation(); handleTriage(t, "remove"); }} className="shrink-0 opacity-0 group-hover/item:opacity-100 text-gray-400 hover:text-red-400 text-caption">✕</button>
+                                     <button
+                                       onClick={(e) => { e.stopPropagation(); setFocusTabRequest(focusTab); }}
+                                       className="shrink-0 w-7 h-7 flex items-center justify-center rounded bg-white/15 hover:bg-white/25 border border-white/40 text-white hover:text-white transition-colors"
+                                       title="Go to report"
+                                     >
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                                     </button>
+                                     <button onClick={(e) => { e.stopPropagation(); handleTriage(t, "remove"); }} className="shrink-0 opacity-60 hover:opacity-100 text-white/60 hover:text-red-300 text-caption p-0.5">✕</button>
                                    </div>
-                                 );
-                               })}
+                                 ))}
                              </div>
                            </details>
                          );
@@ -924,27 +936,24 @@ const App: React.FC = () => {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-6 border-t border-gray-800 text-body font-semibold text-gray-600">
+        <div className="p-6 border-t border-white/20">
            <button
              onClick={() => {
                setCreateDraft({ name: "", files: [] });
                setIsCreateModalOpen(true);
              }}
-             className="w-full mb-4 border border-gray-700 hover:border-[#C5A059] text-gray-400 hover:text-[#C5A059] py-2 rounded-sm transition-colors flex items-center justify-center gap-2 text-body font-semibold"
+             className="w-full mb-3 border border-white/40 hover:border-white hover:bg-white/10 text-white py-2 rounded-sm transition-colors flex items-center justify-center gap-2 text-body font-semibold"
            >
               <span>+</span> New Plan
            </button>
            {firebaseUser ? (
-             <div className="mb-4 space-y-2">
-               <div className="text-body text-gray-500 truncate" title={firebaseUser.email ?? undefined}>{firebaseUser.email ?? firebaseUser.uid}</div>
-               <button onClick={() => signOut(auth)} className="w-full border border-gray-700 hover:border-red-500 text-gray-400 hover:text-red-400 py-1.5 rounded-sm transition-colors text-body font-semibold">Sign Out</button>
-             </div>
+             <button onClick={() => signOut(auth)} className="w-full mb-4 border border-white/40 hover:border-red-300 hover:text-red-300 text-white/90 py-2 rounded-sm transition-colors text-body font-semibold">Sign Out</button>
            ) : (
-             <button onClick={async () => { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { console.error('Sign in failed', e); } }} className="w-full mb-4 border border-[#C5A059] text-[#C5A059] hover:bg-[#C5A059] hover:text-black py-2 rounded-sm transition-colors text-body font-semibold">Sign in (Cloud Engine)</button>
+             <button onClick={async () => { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { console.error('Sign in failed', e); } }} className="w-full mb-4 border border-white bg-white/10 hover:bg-white text-white hover:text-[#004F9F] py-2 rounded-sm transition-colors text-body font-semibold">Sign in (Cloud Engine)</button>
            )}
-           <div className="flex justify-between">
+           <div className="flex justify-between text-caption text-white/70">
               <span>Kernel v2.0</span>
-              <span className={firebaseUser ? "text-green-600" : "text-gray-600"}>{firebaseUser ? "Cloud Ready" : "Sign in"}</span>
+              <span className={firebaseUser ? "text-green-300" : "text-white/60"}>{firebaseUser ? "Cloud Ready" : "Sign in"}</span>
            </div>
         </div>
       </aside>
@@ -976,9 +985,9 @@ const App: React.FC = () => {
                      setCreateDraft({ name: "", files: [] });
                      setIsCreateModalOpen(true);
                    }}
-                   className="group min-h-[240px] border-2 border-dashed border-gray-300 hover:border-[#C5A059] rounded-lg flex flex-col items-center justify-center p-6 transition-all hover:bg-white hover:shadow-lg"
+                   className="group min-h-[240px] border-2 border-dashed border-gray-300 hover:border-[#004F9F] rounded-lg flex flex-col items-center justify-center p-6 transition-all hover:bg-white hover:shadow-lg"
                  >
-                    <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-[#C5A059] text-gray-400 group-hover:text-black flex items-center justify-center mb-4 transition-colors">
+                    <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-[#004F9F] text-gray-400 group-hover:text-white flex items-center justify-center mb-4 transition-colors">
                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                     </div>
                     <span className="font-bold text-gray-600 group-hover:text-black uppercase tracking-wider text-body">Create New Plan</span>
@@ -1017,7 +1026,7 @@ const App: React.FC = () => {
                           {plan.result ? (
                              <div className="flex justify-between items-center">
                                 <span className="text-caption font-bold text-gray-600">Traceable Items</span>
-                                <span className="text-section font-mono font-bold text-[#C5A059]">
+                                <span className="text-section font-mono font-bold text-[#004F9F]">
                                    {(plan.result.expense_samples?.length || 0) + (Object.keys(plan.result.levy_reconciliation?.master_table || {}).length)}
                                 </span>
                              </div>
@@ -1042,7 +1051,7 @@ const App: React.FC = () => {
                     <input
                       value={activePlan.name}
                       onChange={(e) => updatePlan(activePlan.id, { name: e.target.value })}
-                      className="text-title font-bold text-black tracking-tight bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-[#C5A059] focus:outline-none px-1 py-0.5 -ml-1"
+                      className="text-title font-bold text-black tracking-tight bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-[#004F9F] focus:outline-none px-1 py-0.5 -ml-1"
                     />
                     {activePlan.result?.intake_summary?.status && (
                       <span className="text-caption font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded shrink-0">
@@ -1070,7 +1079,7 @@ const App: React.FC = () => {
                        getNextStep(activePlan) === "done" ||
                        (getNextStep(activePlan) === "aiAttempt" && buildAiAttemptTargets(activePlan.result ?? null, activePlan.triage).length === 0)
                          ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                         : "bg-[#C5A059] border-[#C5A059] text-black hover:bg-[#A08040] hover:border-[#A08040]"
+                         : "bg-[#004F9F] border-[#004F9F] text-white hover:bg-[#003d7a] hover:border-[#003d7a]"
                      }`}
                    >
                      {getNextStep(activePlan) === "aiAttempt" ? "Run AI Attempt" : "Next Step"}
@@ -1087,20 +1096,20 @@ const App: React.FC = () => {
 
               {/* Processing banner – non-blocking; main UI (files, report) stays visible */}
               {activePlan.status === "processing" && (
-                <div className="mt-4 p-4 bg-[#111] rounded border border-[#333] flex items-center justify-between gap-4 flex-wrap">
+                <div className="mt-4 p-4 bg-[#004F9F] rounded border border-[#003d7a] flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
                     <div className="relative w-10 h-10 shrink-0">
-                      <div className="w-10 h-10 border-2 border-[#333] rounded-full" />
-                      <div className="w-10 h-10 border-2 border-t-[#C5A059] border-r-transparent border-b-transparent border-l-transparent rounded-full absolute top-0 left-0 animate-spin" />
+                      <div className="w-10 h-10 border-2 border-white/30 rounded-full" />
+                      <div className="w-10 h-10 border-2 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full absolute top-0 left-0 animate-spin" />
                     </div>
                     <div>
                       <p className="text-white font-bold text-body uppercase tracking-wide">Processing Audit Logic</p>
-                      <p className="text-gray-500 text-caption">{activePlan.name}</p>
+                      <p className="text-white/70 text-caption">{activePlan.name}</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setActivePlanId(null)}
-                    className="shrink-0 bg-[#C5A059] hover:bg-[#A08040] text-black font-bold py-2 px-5 rounded text-caption uppercase tracking-wider transition-colors"
+                    className="shrink-0 bg-[#004F9F] hover:bg-[#003d7a] text-white font-bold py-2 px-5 rounded text-caption uppercase tracking-wider transition-colors"
                   >
                     Run in Background
                   </button>
@@ -1109,7 +1118,7 @@ const App: React.FC = () => {
 
               {/* Files section (collapsible with timeline) */}
               <details className="mt-6 shrink-0 group" open>
-                <summary className="cursor-pointer text-caption font-bold text-gray-600 uppercase tracking-widest flex items-center gap-2 hover:text-[#C5A059] transition-colors p-3 bg-white border border-gray-200 rounded">
+                <summary className="cursor-pointer text-caption font-bold text-gray-600 uppercase tracking-widest flex items-center gap-2 hover:text-[#004F9F] transition-colors p-3 bg-white border border-gray-200 rounded">
                   <svg className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
                   </svg>
@@ -1176,7 +1185,7 @@ const App: React.FC = () => {
                   value={createDraft.name}
                   onChange={(e) => setCreateDraft((d) => ({ ...d, name: e.target.value }))}
                   placeholder={createDraft.files[0]?.name.split('.')[0] || "e.g. SP 12345 Audit"}
-                  className="w-full px-4 py-3 border border-gray-300 rounded text-body focus:border-[#C5A059] focus:outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded text-body focus:border-[#004F9F] focus:outline-none"
                 />
               </div>
               <div>
@@ -1197,7 +1206,7 @@ const App: React.FC = () => {
               <button
                 onClick={handleCreatePlanConfirm}
                 disabled={!firebaseUser || createDraft.files.length === 0}
-                className="px-8 py-3 font-bold text-caption uppercase tracking-widest rounded-sm bg-[#C5A059] text-black hover:bg-[#A08040] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-8 py-3 font-bold text-caption uppercase tracking-widest rounded-sm bg-[#004F9F] text-white hover:bg-[#003d7a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Create & Open
               </button>
@@ -1250,7 +1259,7 @@ function MarkOffModal({
           <button
             onClick={() => { if (comment.trim()) onConfirm(comment); }}
             disabled={!comment.trim()}
-            className="px-6 py-2 font-bold text-caption uppercase rounded bg-[#C5A059] text-black hover:bg-[#A08040] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 font-bold text-caption uppercase rounded bg-[#004F9F] text-white hover:bg-[#003d7a] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Confirm
           </button>

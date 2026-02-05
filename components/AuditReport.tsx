@@ -161,7 +161,7 @@ const ForensicCell: React.FC<{
       <button 
         ref={buttonRef}
         onClick={handleClick}
-        className={`border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer transition-colors px-1 rounded-sm relative hover:text-[#A08040] ${textColor || 'text-gray-800'} ${isBold ? 'font-bold' : ''}`}
+        className={`border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer transition-colors px-1 rounded-sm relative hover:text-[#003d7a] ${textColor || 'text-gray-800'} ${isBold ? 'font-bold' : ''}`}
         style={{ fontSize: 'inherit' }}
         title="Click for Forensic Trace"
       >
@@ -172,7 +172,7 @@ const ForensicCell: React.FC<{
       {showCard && (
         <div 
           ref={cardRef}
-          className="fixed z-[9999] w-80 bg-white rounded shadow-2xl border-t-4 border-[#C5A059] text-left animate-fade-in font-sans"
+          className="fixed z-[9999] w-80 bg-white rounded shadow-2xl border-t-4 border-[#004F9F] text-left animate-fade-in font-sans"
           style={{ 
              top: coords.top, 
              left: coords.left,
@@ -182,8 +182,8 @@ const ForensicCell: React.FC<{
         >
            {/* Header */}
            <div className="flex justify-between items-center bg-[#F9F9F9] px-4 py-3 border-b border-gray-100">
-              <span className="text-body font-bold text-[#C5A059] uppercase tracking-widest flex items-center gap-2">
-                <span className="bg-[#C5A059] text-white rounded-sm w-4 h-4 flex items-center justify-center text-micro">🔍</span>
+              <span className="text-body font-bold text-[#004F9F] uppercase tracking-widest flex items-center gap-2">
+                <span className="bg-[#004F9F] text-white rounded-sm w-4 h-4 flex items-center justify-center text-micro">🔍</span>
                 Forensic Trace
               </span>
               <button 
@@ -204,7 +204,7 @@ const ForensicCell: React.FC<{
                     <span>
                       {[doc.Document_Origin_Name, ...(val.page_ref ? val.page_ref.split(/\s*[>›]\s*/).map(s => s.trim()).filter(Boolean) : [])].map((part, i) => (
                         <React.Fragment key={i}>
-                          {i > 0 && <span className="text-[#C5A059] font-bold mx-1">&gt;</span>}
+                          {i > 0 && <span className="text-[#004F9F] font-bold mx-1">&gt;</span>}
                           {part}
                         </React.Fragment>
                       ))}
@@ -238,7 +238,7 @@ const ForensicCell: React.FC<{
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                       Visual Anchor
                    </span>
-                   <div className="text-caption font-mono text-gray-600 bg-gray-100 p-2 border border-gray-200 border-l-4 border-l-[#C5A059]">
+                   <div className="text-caption font-mono text-gray-600 bg-gray-100 p-2 border border-gray-200 border-l-4 border-l-[#004F9F]">
                       "{val.verbatim_quote}"
                    </div>
                 </div>
@@ -273,7 +273,7 @@ const ForensicCell: React.FC<{
                 <div className="pt-2">
                    <button 
                      onClick={handleOpenPdf}
-                     className="w-full flex items-center justify-center gap-2 bg-black text-white hover:bg-[#C5A059] transition-colors py-2 text-caption font-bold uppercase tracking-wider rounded-sm"
+                     className="w-full flex items-center justify-center gap-2 bg-black text-white hover:bg-[#004F9F] transition-colors py-2 text-caption font-bold uppercase tracking-wider rounded-sm"
                    >
                      View Source Document
                    </button>
@@ -295,12 +295,12 @@ const ForensicCell: React.FC<{
            >
               <div className="flex justify-between items-center bg-[#111] text-white px-6 py-4 border-b border-gray-800 shrink-0">
                  <div className="flex items-center gap-3 overflow-hidden">
-                    <span className="bg-[#C5A059] text-black text-caption font-bold px-2 py-1 rounded-sm uppercase tracking-wide">Evidence Preview</span>
+                    <span className="bg-[#004F9F] text-white text-caption font-bold px-2 py-1 rounded-sm uppercase tracking-wide">Evidence Preview</span>
                     <span className="font-bold truncate text-gray-300" title={targetFile?.name}>
                       {doc ? doc.Document_Origin_Name : targetFile?.name}
                     </span>
                     <span className="text-gray-500 text-body">/</span>
-                    <span className="text-[#C5A059] font-medium text-body">{val.page_ref}</span>
+                    <span className="text-[#004F9F] font-medium text-body">{val.page_ref}</span>
                  </div>
                  <button 
                    onClick={() => setShowPdfModal(false)}
@@ -430,10 +430,10 @@ const ExpenseForensicPopover: React.FC<{
   return (
     <>
       <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-        <div className="bg-white w-full max-w-md rounded shadow-2xl border-t-4 border-[#C5A059] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-white w-full max-w-md rounded shadow-2xl border-t-4 border-[#004F9F] overflow-hidden" onClick={e => e.stopPropagation()}>
           <div className="flex justify-between items-center bg-[#F9F9F9] px-6 py-4 border-b border-gray-100">
-            <span className="text-body font-bold text-[#C5A059] uppercase tracking-widest flex items-center gap-2">
-              <span className="bg-[#C5A059] text-white rounded-sm w-4 h-4 flex items-center justify-center text-micro">🔍</span>
+            <span className="text-body font-bold text-[#004F9F] uppercase tracking-widest flex items-center gap-2">
+              <span className="bg-[#004F9F] text-white rounded-sm w-4 h-4 flex items-center justify-center text-micro">🔍</span>
               Forensic Trace – {payload.title}
             </span>
             <button onClick={onClose} className="text-gray-400 hover:text-black">✕</button>
@@ -446,7 +446,7 @@ const ExpenseForensicPopover: React.FC<{
                   <span>
                     {[doc.Document_Origin_Name, ...(payload.page_ref ? payload.page_ref.split(/\s*[>›]\s*/).map(s => s.trim()).filter(Boolean) : [])].map((part, i) => (
                       <React.Fragment key={i}>
-                        {i > 0 && <span className="text-[#C5A059] font-bold mx-1">&gt;</span>}
+                        {i > 0 && <span className="text-[#004F9F] font-bold mx-1">&gt;</span>}
                         {part}
                       </React.Fragment>
                     ))}
@@ -474,7 +474,7 @@ const ExpenseForensicPopover: React.FC<{
               <button
                 onClick={handleOpenPdf}
                 className={`w-full flex items-center justify-center gap-2 py-2 text-caption font-bold uppercase tracking-wider rounded-sm transition-colors ${
-                  targetFile ? 'bg-black text-white hover:bg-[#C5A059]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  targetFile ? 'bg-black text-white hover:bg-[#004F9F]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
                 disabled={!targetFile}
                 title={!targetFile ? 'Source file not found – ensure evidence was uploaded and document is in the register' : undefined}
@@ -490,9 +490,9 @@ const ExpenseForensicPopover: React.FC<{
           <div className="bg-white w-full h-full rounded shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center bg-[#111] text-white px-6 py-4 border-b border-gray-800 shrink-0">
               <div className="flex items-center gap-3 overflow-hidden">
-                <span className="bg-[#C5A059] text-black text-caption font-bold px-2 py-1 rounded-sm uppercase">Evidence Preview</span>
+                <span className="bg-[#004F9F] text-white text-caption font-bold px-2 py-1 rounded-sm uppercase">Evidence Preview</span>
                 <span className="font-bold truncate text-gray-300" title={targetFile?.name}>{doc ? doc.Document_Origin_Name : targetFile?.name}</span>
-                {payload.page_ref && <span className="text-[#C5A059] text-body">/ {payload.page_ref}</span>}
+                {payload.page_ref && <span className="text-[#004F9F] text-body">/ {payload.page_ref}</span>}
               </div>
               <button onClick={() => setShowPdfModal(false)} className="text-gray-400 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2">✕</button>
             </div>
@@ -571,10 +571,10 @@ function buildExpenseForensicPayload(
 const VerificationMatrixModal: React.FC<{ steps: VerificationStep[]; onClose: () => void }> = ({ steps, onClose }) => {
    return (
       <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-         <div className="bg-white w-full max-w-lg rounded shadow-2xl border-t-4 border-[#C5A059] overflow-hidden" onClick={e => e.stopPropagation()}>
+         <div className="bg-white w-full max-w-lg rounded shadow-2xl border-t-4 border-[#004F9F] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
                <h3 className="font-bold text-section text-black uppercase tracking-wide flex items-center gap-2">
-                  <span className="text-[#C5A059]">✓</span> Adjudication Matrix
+                  <span className="text-[#004F9F]">✓</span> Adjudication Matrix
                </h3>
                <button onClick={onClose} className="text-gray-400 hover:text-black">✕</button>
             </div>
@@ -660,7 +660,7 @@ const TriageModal: React.FC<{
                <div className="mb-4">
                   <label className="block text-caption font-bold text-gray-500 uppercase tracking-widest mb-2">Review Note</label>
                   <textarea 
-                     className="w-full border border-gray-300 rounded p-2 text-body focus:border-[#C5A059] focus:outline-none"
+                     className="w-full border border-gray-300 rounded p-2 text-body focus:border-[#004F9F] focus:outline-none"
                      rows={3}
                      value={comment}
                      onChange={(e) => setComment(e.target.value)}
@@ -678,7 +678,7 @@ const TriageModal: React.FC<{
                      severity,
                      timestamp: Date.now()
                   })}
-                  className="w-full bg-black hover:bg-[#C5A059] text-white font-bold py-3 text-caption uppercase tracking-widest rounded transition-colors"
+                  className="w-full bg-black hover:bg-[#004F9F] text-white font-bold py-3 text-caption uppercase tracking-widest rounded transition-colors"
                >
                   Save Flag
                </button>
@@ -748,7 +748,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
     onClick={onClick}
     className={`px-6 py-3 text-heading-sm font-bold uppercase tracking-wider transition-all border-b-2 ${
       active
-        ? 'border-[#C5A059] text-[#C5A059] bg-[#C5A059]/5'
+        ? 'border-[#004F9F] text-[#004F9F] bg-[#004F9F]/5'
         : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
     }`}
   >
@@ -840,17 +840,17 @@ export const AuditReport: React.FC<AuditReportProps> = ({
 
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-8 pt-6 rounded-t">
         <h2 className="text-title font-bold text-black mb-4 tracking-tight">Audit Execution Report</h2>
-        <div className="mb-4 py-3 px-4 rounded bg-[#C5A059]/10 border border-[#C5A059]/30 flex flex-wrap items-center gap-6">
+        <div className="mb-4 py-3 px-4 rounded bg-[#004F9F]/10 border border-[#004F9F]/30 flex flex-wrap items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="text-label font-bold text-[#C5A059] uppercase tracking-widest">Strata Plan</span>
+            <span className="text-label font-bold text-[#004F9F] uppercase tracking-widest">Strata Plan</span>
             <span className="text-heading-sm font-bold text-black font-mono">{summary.strata_plan || '–'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-label font-bold text-[#C5A059] uppercase tracking-widest">FY (Global)</span>
+            <span className="text-label font-bold text-[#004F9F] uppercase tracking-widest">FY (Global)</span>
             <span className="text-heading-sm font-bold text-black font-mono">{summary.financial_year || '–'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-label font-bold text-[#C5A059] uppercase tracking-widest">Registered for GST</span>
+            <span className="text-label font-bold text-[#004F9F] uppercase tracking-widest">Registered for GST</span>
             <span className="text-heading-sm font-bold text-black font-mono">{summary.registered_for_gst === true ? 'Yes' : summary.registered_for_gst === false ? 'No' : '–'}</span>
           </div>
         </div>
@@ -884,29 +884,29 @@ export const AuditReport: React.FC<AuditReportProps> = ({
         {activeTab === 'docs' && (
           <div className="space-y-8">
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-              <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+              <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                 <h3 className="text-heading font-bold text-black uppercase tracking-wide">Step 0: Document Dictionary</h3>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                 <div className="p-4 bg-gray-50 border border-gray-100">
-                  <div className="text-body text-[#C5A059] uppercase font-bold tracking-widest mb-2">Total Files</div>
+                  <div className="text-body text-[#004F9F] uppercase font-bold tracking-widest mb-2">Total Files</div>
                   <div className="text-section font-bold text-black">{summary.total_files}</div>
                 </div>
                 <div className="p-4 bg-gray-50 border border-gray-100">
                   <div className="text-body text-gray-500 uppercase font-bold tracking-widest mb-2">Status</div>
                   <div className="text-section font-bold text-black">{summary.status}</div>
                 </div>
-                <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
-                  <div className="text-body text-[#C5A059] uppercase font-bold tracking-widest mb-2">Strata Plan</div>
+                <div className="p-4 bg-[#004F9F]/10 border border-[#004F9F]/30">
+                  <div className="text-body text-[#004F9F] uppercase font-bold tracking-widest mb-2">Strata Plan</div>
                   <div className="text-section font-bold text-black font-mono">{summary.strata_plan || '–'}</div>
                 </div>
-                <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
-                  <div className="text-body text-[#C5A059] uppercase font-bold tracking-widest mb-2">FY (Global)</div>
+                <div className="p-4 bg-[#004F9F]/10 border border-[#004F9F]/30">
+                  <div className="text-body text-[#004F9F] uppercase font-bold tracking-widest mb-2">FY (Global)</div>
                   <div className="text-section font-bold text-black font-mono">{summary.financial_year || '–'}</div>
                 </div>
-                <div className="p-4 bg-[#C5A059]/10 border border-[#C5A059]/30">
-                  <div className="text-body text-[#C5A059] uppercase font-bold tracking-widest mb-2">Registered for GST</div>
+                <div className="p-4 bg-[#004F9F]/10 border border-[#004F9F]/30">
+                  <div className="text-body text-[#004F9F] uppercase font-bold tracking-widest mb-2">Registered for GST</div>
                   <div className="text-section font-bold text-black font-mono">{summary.registered_for_gst === true ? 'Yes' : summary.registered_for_gst === false ? 'No' : '–'}</div>
                 </div>
                 {summary.missing_critical_types && summary.missing_critical_types.length > 0 ? (
@@ -961,7 +961,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
 
               {/* Core Data Positions */}
               <div className="mt-10 pt-8 border-t border-gray-200">
-                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                   <h4 className="text-body font-bold text-black uppercase tracking-wide">
                     Core Data Positions
                   </h4>
@@ -1007,7 +1007,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             <span>{originName}</span>
                             {pagePart && (
                               <>
-                                <span className="text-[#C5A059] font-bold mx-1">&gt;</span>
+                                <span className="text-[#004F9F] font-bold mx-1">&gt;</span>
                                 <span>{pagePart}</span>
                               </>
                             )}
@@ -1025,7 +1025,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
 
               {/* Balance Sheet Extract (single source of truth for Phase 2/4/5) */}
               <div className="mt-10 pt-8 border-t border-gray-200">
-                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                   <h4 className="text-body font-bold text-black uppercase tracking-wide">
                     Balance Sheet Extract
                   </h4>
@@ -1036,8 +1036,8 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                 {safeData.bs_extract && Array.isArray(safeData.bs_extract.rows) && safeData.bs_extract.rows.length > 0 ? (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div className="p-3 bg-[#C5A059]/10 border border-[#C5A059]/30 rounded">
-                        <span className="text-label text-[#C5A059] uppercase font-bold">Current Year</span>
+                      <div className="p-3 bg-[#004F9F]/10 border border-[#004F9F]/30 rounded">
+                        <span className="text-label text-[#004F9F] uppercase font-bold">Current Year</span>
                         <div className="text-body font-bold font-mono">{safeData.bs_extract.current_year_label || '–'}</div>
                       </div>
                       <div className="p-3 bg-gray-50 border border-gray-200 rounded">
@@ -1112,7 +1112,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
         {activeTab === 'levy' && data.levy_reconciliation?.master_table && (
           <div className="space-y-8">
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-              <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+              <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                 <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table E.Master: Detailed Levy Reconciliation</h3>
               </div>
               
@@ -1462,7 +1462,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
             <div className="space-y-8">
                 {/* Table C.3: Full Balance Sheet Verification (Phase 4 GATE 2) – font/size/forensic aligned with Table E.Master */}
                 <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                    <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                         <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table C.3: Full Balance Sheet Verification (Phase 4 GATE 2)</h3>
                         <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Owners Equity, Assets, Liabilities – line-by-line verification per ASSET_VERIFICATION_RULES. Current Year column only.</p>
                         <p className="text-label text-gray-400 mt-2 italic">BS Amount ($) = from Financial Statement Balance Sheet only; Supporting ($) = from R2–R5 evidence only (Bank Stmt, Levy Report, breakdown, GL).</p>
@@ -1563,7 +1563,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
             const isV2 = data.expense_samples.some((s) => s.Risk_Profile && s.Three_Way_Match);
             return (
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                 <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                 <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                     <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table I.1: Expense Vouching Schedule</h3>
                     {isV2 && <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Risk-based sampling – Three-Way Match & Fund Integrity</p>}
                  </div>
@@ -1617,22 +1617,22 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                             </td>
                                             <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} /></td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
-                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'INV', rowIndex: idx, item })} className="border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'INV', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
                                                     {inv ? (inv.addressed_to_strata && inv.payee_match ? '✅' : '❌') : '–'}
                                                 </button>
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
-                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'PAY', rowIndex: idx, item })} className="border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'PAY', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
                                                     {pay ? (pay.status === 'PAID' ? '✅' : pay.status === 'ACCRUED' ? '⏳' : '❌') : '–'}
                                                 </button>
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
-                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'AUTH', rowIndex: idx, item })} className="border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'AUTH', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
                                                     {auth ? (auth.status === 'AUTHORISED' ? '✅' : auth.status === 'MINUTES_NOT_AVAILABLE' || auth.status === 'NO_MINUTES_FOUND' ? '⚠️' : '❌') : '–'}
                                                 </button>
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100">
-                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'FUND', rowIndex: idx, item })} className="text-left w-full border-b border-dotted border-[#C5A059] hover:bg-[#C5A059]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
+                                                <button type="button" onClick={() => setExpenseForensic({ pillar: 'FUND', rowIndex: idx, item })} className="text-left w-full border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
                                                     {fund ? (
                                                         <>
                                                             <span className={`px-2 py-0.5 text-label font-bold uppercase ${fund.classification_status === 'MISCLASSIFIED' ? 'bg-yellow-200 text-yellow-900' : fund.classification_status === 'UNCERTAIN' ? 'bg-gray-200 text-gray-800' : 'bg-green-100 text-green-800'}`}>{fund.classification_status}</span>
@@ -1699,7 +1699,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         Plan not registered for GST (per Step 0 Balance Sheet scan). GST reconciliation N/A – zeros shown.
                     </div>
                 )}
-                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                     <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table F.Master: GST Control Account Roll-Forward</h3>
                     <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Opening + GST Raised - GST Paid + BAS Activity = Closing Balance</p>
                 </div>
@@ -1788,7 +1788,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
         {/* 2. Insurance – Table K.1 */}
         {data.statutory_compliance?.insurance && (
                  <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                    <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                         <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table K.1: Insurance Adequacy Test</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1840,7 +1840,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
 
         {data.statutory_compliance?.income_tax && (
                  <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                    <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                    <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                         <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table L.1: Income Tax</h3>
                     </div>
                     <table className="w-full text-heading-sm">
@@ -1888,7 +1888,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
         {/* AI ATTEMPT – Unified Queue + Results (paired per item) */}
         {activeTab === 'aiAttempt' && (
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                     <h3 className="text-heading font-bold text-black uppercase tracking-wide">Items to Re-verify & Results</h3>
                     <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Add evidence if needed, then Run AI Attempt to re-verify. Results appear below each item after run.</p>
                 </div>
@@ -1901,7 +1901,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-left border border-gray-200">
-                            <thead className="bg-[#C5A059]/10 uppercase text-caption font-bold tracking-wider">
+                            <thead className="bg-[#004F9F]/10 uppercase text-caption font-bold tracking-wider">
                                 <tr>
                                     <th className="px-4 py-3 border-b border-gray-200">Area</th>
                                     <th className="px-4 py-3 border-b border-gray-200">Item</th>
@@ -1947,11 +1947,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                             {onRequestFocusTab && focusTabId && (
                                                                 <button
                                                                     onClick={() => onRequestFocusTab(focusTabId)}
-                                                                    className="inline-flex items-center gap-1 px-2 py-1 text-caption font-medium text-[#C5A059] hover:text-[#8B6914] hover:bg-[#C5A059]/10 rounded border border-[#C5A059]/50 transition-colors"
+                                                                    className="inline-flex items-center justify-center w-8 h-8 rounded-md text-[#004F9F] hover:bg-[#004F9F]/10 hover:text-[#003d7a] border border-[#004F9F]/40 transition-colors"
                                                                     title="Go to report section"
                                                                 >
-                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
-                                                                    Go to
+                                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
                                                                 </button>
                                                             )}
                                                             {!res && onMarkOff && (
@@ -1975,7 +1974,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                 </tr>
                                                 {/* Result row (when AI Attempt has run) */}
                                                 {resolution && (
-                                                    <tr className="bg-[#C5A059]/5 hover:bg-[#C5A059]/10">
+                                                    <tr className="bg-[#004F9F]/5 hover:bg-[#004F9F]/10">
                                                         <td colSpan={3} className="px-4 py-0" />
                                                         <td className="px-4 py-2 text-caption text-gray-700">{resolution.issue_identified}</td>
                                                         <td className="px-4 py-2 text-caption text-gray-600 italic">{resolution.ai_attempt_conduct}</td>
@@ -1997,7 +1996,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
         {/* COMPLETION – Items marked Resolved / Flag / Override (no AI, always open) */}
         {activeTab === 'completion' && (
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                <div className="border-b-2 border-[#C5A059] pb-3 mb-6">
+                <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
                     <h3 className="text-heading font-bold text-black uppercase tracking-wide">Completion – Flagged / Resolved Items</h3>
                     <p className="text-caption text-gray-500 mt-1">Items marked in Triage or AI Attempt move here.</p>
                 </div>
