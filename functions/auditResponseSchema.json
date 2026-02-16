@@ -2912,8 +2912,7 @@
             },
             "required": [
               "invoice",
-              "payment",
-              "authority"
+              "payment"
             ],
             "additionalProperties": false
           },

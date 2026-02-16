@@ -22,9 +22,9 @@ export interface IntakeSummary {
   strata_plan?: string;
   /** Financial Year – extracted from minutes/financials (format DD/MM/YYYY - DD/MM/YYYY or DD/MM/YYYY); used as global FY for all phases */
   financial_year?: string;
-  /** Manager spending limit (single transaction) – from Strata Agency Agreement or Committee Minutes; used for Phase 3 Authority Tier 1 */
+  /** Manager spending limit – from Strata Agency Agreement or Committee Minutes; used for Phase 3 Step A (MATERIALITY, SPLIT_PATTERN) when available */
   manager_limit?: number;
-  /** AGM-approved limit above which General Meeting approval required – from AGM Minutes; used for Phase 3 Authority Tier 2/3 */
+  /** AGM-approved limit – from AGM Minutes; used for Phase 3 Step A (SPLIT_PATTERN) when available */
   agm_limit?: number;
   /** True when FY cannot be determined or BS year mapping is ambiguous – boundary not reliably defined */
   boundary_defined?: boolean;
@@ -279,7 +279,7 @@ export interface PaymentChecks {
   date_match?: PaymentCheckItem;
 }
 
-/** Phase 3 v2: Three-way match (Invoice / Payment / Authority) */
+/** Phase 3 v2: Three-way match (Invoice / Payment). Authority removed – optional for backward compat. */
 export interface ThreeWayMatch {
   invoice: {
     id: string;
@@ -304,12 +304,12 @@ export interface ThreeWayMatch {
     /** Forensic: page_ref and context for Evidence Chain popover. source_doc used as Doc ID when evidence not set. */
     evidence?: ExpenseEvidenceRef;
   };
-  authority: {
+  /** @deprecated Authority removed from Phase 3. Kept optional for backward compat with old data. */
+  authority?: {
     required_tier: "MANAGER" | "COMMITTEE" | "GENERAL_MEETING";
     limit_applied: number;
     minute_ref?: string;
     status: "AUTHORISED" | "UNAUTHORISED" | "NO_MINUTES_FOUND" | "MINUTES_NOT_AVAILABLE";
-    /** Forensic: Doc ID / page and context for Evidence Chain popover. */
     evidence?: ExpenseEvidenceRef;
   };
 }

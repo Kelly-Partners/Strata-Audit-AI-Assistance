@@ -1294,9 +1294,9 @@ const App: React.FC = () => {
                 </div>
               </details>
 
-              {/* Report or empty state */}
+              {/* Report or empty state – show skeleton only when processing AND no result; if result exists, keep showing it (avoid covering completed content) */}
               <div className="mt-8 flex-1 min-h-0">
-                {activePlan.status === "processing" ? (
+                {activePlan.status === "processing" && !activePlan.result ? (
                   <ReportSkeleton />
                 ) : activePlan.result ? (
                   <AuditReport

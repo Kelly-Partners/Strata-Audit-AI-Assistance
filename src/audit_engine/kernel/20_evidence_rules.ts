@@ -73,7 +73,7 @@ The following MUST NOT be used as Supporting Source when Tier 1 or Tier 2 is req
 - Financial Statement (as supporting evidence for BS line items – bs_amount comes from bs_extract only)
 - Notes to the Financial Statement
 - General Ledger (when Tier 1 required, e.g. Cash at Bank – use Bank Statement only; Phase 5 Insurance – use Insurance Policy/Insurance Valuation Report only)
-- Phase 3: Invoice = Tier 1; Payment PAID = Tier 1; ACCRUED = Tier 2; Authority = Tier 2. FS/Notes/GL when Tier 1/2 required → PROHIBITED.
+- Phase 3: Invoice = Tier 1; Payment PAID = Tier 1; ACCRUED = Tier 2. FS/Notes/GL when Tier 1/2 required → PROHIBITED.
 - Phase 4: R2 = Tier 1; R3/4 = Tier 2. FS/Notes/GL when Tier 1/2 required → PROHIBITED.
 - Phase 5 Insurance: Tier 1 ONLY (Insurance Policy, Insurance Valuation Report, Certificate of Currency). Management summaries, GL, Notes → PROHIBITED.
 

@@ -77,7 +77,7 @@ ${mode === "phase4" ? `
 5. [Phase 4 ONLY] bs_amount and line_item MUST be looked up from LOCKED bs_extract. supporting_amount per Evidence Tier: R2=Tier 1, R3/4=Tier 2, R5=Tier 3. Do NOT re-read Balance Sheet PDF. NO ELEVATION (Bank reconciliation ≠ Bank Statement).
 ` : ""}
 ${mode === "expenses" ? `
-5. [Phase 3 ONLY] Apply Evidence Tier: Invoice & Payment PAID = Tier 1; ACCRUED = Tier 2 (Creditors Report); Authority = Tier 2 (Minutes). Do NOT substitute lower-tier evidence.
+5. [Phase 3 ONLY] Apply Evidence Tier: Invoice & Payment PAID = Tier 1; ACCRUED = Tier 2 (Creditors Report). Do NOT substitute lower-tier evidence.
 ` : ""}
 ${mode === "expenses_additional" ? `
 5. [Phase 3 Additional ONLY] Register attached files in document_register. Re-vouch ONLY expense items that match new evidence (by payee/amount/date). Return document_register (merged) and expense_samples_additional (re-vouched items only).

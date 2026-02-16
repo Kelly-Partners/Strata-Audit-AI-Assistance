@@ -12,9 +12,8 @@ Use only document_register rows where Evidence_Tier matches the required tier fo
 - **Invoice validity** → Tier 1 ONLY (Tax Invoice, supplier invoice – from document_register where Evidence_Tier = Tier 1).
 - **Payment evidence (PAID)** → Tier 1 ONLY (Bank Statement – from document_register where Evidence_Tier = Tier 1). Do NOT use Bank reconciliation or GL as substitute.
 - **Payment evidence (ACCRUED)** → Tier 2 ONLY (Creditors Report – from document_register where Evidence_Tier = Tier 2 and Document_Type = Creditors Report or equivalent Aged Payables report).
-- **Authority (Committee/AGM approval)** → Tier 2 ONLY (Committee Minutes, AGM/EGM Minutes – from document_register where Evidence_Tier = Tier 2).
 
-If the required tier evidence is not in document_register, set the appropriate status (e.g. BANK_STMT_MISSING, MINUTES_NOT_AVAILABLE, MISSING) – do NOT substitute with lower-tier evidence.
+If the required tier evidence is not in document_register, set the appropriate status (e.g. BANK_STMT_MISSING, MISSING) – do NOT substitute with lower-tier evidence.
 
 STEP A: SCAN & SELECT (DO NOT PICK RANDOM ITEMS) – Five dimensions, assign selection_dimension per item
 
@@ -58,18 +57,12 @@ For each selected item, perform three checks and populate Three_Way_Match:
    * bank_account_match: Payment is from the scheme's bank account (not manager/personal/other). passed = true if account is OC/Strata account.
    * payee_match: Bank payee/recipient matches GL_Payee or invoice payee. passed = true if match.
    * duplicate_check: No duplicate payment (same supplier, same amount, similar date). passed = true if not duplicate.
-   * split_payment_check: Not a split payment to circumvent authority limits (use Risk_Profile.is_split_invoice). passed = true if no split or split is justified.
+   * split_payment_check: Not a split payment (use Risk_Profile.is_split_invoice). passed = true if no split or split is justified.
    * amount_match: Bank amount matches GL within ±1% or ±$10. passed = true if match. Top-level amount_match must stay in sync.
    * date_match: Payment date within GL Date ±14 days. passed = true if within window.
    - FAIL if bank_account_match, payee_match, amount_match, duplicate_check, or split_payment_check fails. date_match failure -> RISK_FLAG.
    - Each check's evidence MUST include source_doc_id and page_ref for PDF link in Forensic popover.
 
-3. AUTHORITY TIERING (authority) – COMMITTEE/AGM TIER 2 ONLY:
-   - Use intake_summary.manager_limit and intake_summary.agm_limit when available. If not in intake_summary, infer from Agency Agreement / Minutes.
-   - TIER 1 (MANAGER): Amount < manager_limit -> required_tier = "MANAGER", limit_applied = manager_limit, status = "AUTHORISED".
-   - TIER 2 (COMMITTEE): Amount >= manager_limit AND amount < agm_limit -> required_tier = "COMMITTEE". Search Committee Minutes (document_register where Evidence_Tier = Tier 2) for approval (Payee or Amount). If found -> minute_ref = "Committee Meeting DD/MM/YY Item X.X", status = "AUTHORISED". If Minutes missing -> status = "MINUTES_NOT_AVAILABLE". If not found in Minutes -> status = "UNAUTHORISED".
-   - TIER 3 (GENERAL_MEETING): Amount >= agm_limit OR "Legal/Loan/Special Levy" matters -> required_tier = "GENERAL_MEETING". Search AGM/EGM Minutes (document_register where Evidence_Tier = Tier 2) for approval. If found -> minute_ref = "AGM DD/MM/YY Item X.X", status = "AUTHORISED". If not found -> status = "UNAUTHORISED".
-   - Fail Authority Test if Committee/AGM approval required but no minute_ref found (status = "UNAUTHORISED").
 `;
 
 export const PHASE_3_FUND_INTEGRITY = `
@@ -84,17 +77,15 @@ export const PHASE_3_EXPENSES_PROMPT = `
 PHASE 3 – RISK-BASED EXPENSE AUDIT (v2.0)
 Objective: Execute MODULE 'EXPENSE_RISK_FRAMEWORK'. Do NOT sample randomly.
 
-**MANDATORY – Evidence Tier (20_EVIDENCE):** Use only document_register rows where Evidence_Tier matches the required tier for each evidence type. Invoice & Payment (PAID) = Tier 1. ACCRUED = Tier 2 (Creditors/Aged report). Committee/AGM Minutes = Tier 2.
+**MANDATORY – Evidence Tier (20_EVIDENCE):** Use only document_register rows where Evidence_Tier matches the required tier for each evidence type. Invoice & Payment (PAID) = Tier 1. ACCRUED = Tier 2 (Creditors/Aged report).
 
 1. Scan the General Ledger (use core_data_positions.general_ledger) and pl_extract for total expenditure. Build **Target Sample List** from STEP A (five dimensions: Value coverage, Risk keyword, Materiality, Anomaly, Split/Recurring). Assign selection_dimension to each item. Sort per STEP A rule 6.
 
 2. For each item in the Target Sample List, execute STEP B (Three-Way Match) and STEP C (Fund Integrity). Output GL_ID (or unique ref), GL_Date, GL_Payee, GL_Amount (TraceableValue), Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status.
 
-3. Overall_Status: "PASS" = Invoice valid (all checks pass) + (PAID or ACCRUED) + AUTHORISED + CORRECT fund. "FAIL" = any of: any invoice check failed (including payee_match or abn_valid), payment MISSING, authority UNAUTHORISED, MISCLASSIFIED. "RISK_FLAG" = BANK_STMT_MISSING or MINUTES_NOT_AVAILABLE or UNCERTAIN fund.
+3. Overall_Status: "PASS" = Invoice valid (all checks pass) + (PAID or ACCRUED) + CORRECT fund. "FAIL" = any of: any invoice check failed (including payee_match or abn_valid), payment MISSING, MISCLASSIFIED. "RISK_FLAG" = BANK_STMT_MISSING or UNCERTAIN fund.
 
-4. You MUST explicitly distinguish "PAID" (found in bank) vs "ACCRUED" (found in creditors report). You MUST fail the Authority Test if Committee/AGM approval is required but no minute_ref is found.
-
-5. Use intake_summary.manager_limit and intake_summary.agm_limit when present; otherwise infer from Agency Agreement / Minutes and state in note.
+4. You MUST explicitly distinguish "PAID" (found in bank) vs "ACCRUED" (found in creditors report).
 `;
 
 /** Phase 3 Additional Run – supplement vouching with new evidence. NO Step A. Only re-vouch items linked to new documents. */
@@ -113,5 +104,5 @@ PHASE 3 – ADDITIONAL RUN (Supplement Evidence – DO NOT RE-SCAN)
 2. For each new document: match it to GL items in PREVIOUS expense_samples by payee + amount + date (within ±14 days).
 3. For each PREVIOUS expense item that has matching new evidence: re-execute STEP B (Three-Way Match) and STEP C (Fund Integrity) using the FULL document_register (including new rows). Output the updated item with same structure.
 4. Output ONLY items that were re-vouched (items where new evidence was used). Do NOT output items that had no new evidence.
-5. Use same Evidence Tier rules: Invoice = Tier 1; Payment PAID = Tier 1; ACCRUED = Tier 2; Authority = Tier 2.
+5. Use same Evidence Tier rules: Invoice = Tier 1; Payment PAID = Tier 1; ACCRUED = Tier 2.
 `;

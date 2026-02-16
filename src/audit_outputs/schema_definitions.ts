@@ -206,7 +206,7 @@ const ThreeWayMatchSchema = z.object({
     minute_ref: z.string().optional(),
     status: z.enum(["AUTHORISED", "UNAUTHORISED", "NO_MINUTES_FOUND", "MINUTES_NOT_AVAILABLE"]),
     evidence: ExpenseEvidenceRefSchema.optional(),
-  }),
+  }).optional(),
 });
 
 /** Phase 3 v2: Fund classification (Admin vs Capital) */
