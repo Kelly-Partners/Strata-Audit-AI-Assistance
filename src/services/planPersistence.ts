@@ -19,7 +19,7 @@ import {
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
-import type { TriageItem, UserResolution, UserOverride } from "../audit_outputs/type_definitions";
+import type { TriageItem, UserResolution, UserOverride, AiAttemptHistoryEntry, AdditionalRunMeta } from "../audit_outputs/type_definitions";
 
 export interface FileMetaEntry {
   uploadedAt: number;
@@ -37,6 +37,8 @@ export interface PlanDoc {
   triage?: TriageItem[];
   user_resolutions?: UserResolution[];
   user_overrides?: UserOverride[];
+  ai_attempt_history?: AiAttemptHistoryEntry[];
+  additional_runs?: AdditionalRunMeta[];
   error?: string | null;
   updatedAt?: number;
 }
@@ -70,7 +72,31 @@ export async function uploadPlanFiles(
 }
 
 /**
- * 移除对象中值为 undefined 的键，避免 Firestore setDoc 报错。
+ * Upload additional run files to Storage: users/{userId}/plans/{planId}/additional/run_{runId}/{fileName}
+ * Returns full paths for Firestore.
+ */
+export async function uploadAdditionalRunFiles(
+  storageInstance: FirebaseStorage,
+  userId: string,
+  planId: string,
+  runId: string,
+  files: File[]
+): Promise<string[]> {
+  const base = `users/${userId}/plans/${planId}/additional/run_${runId}`;
+  const paths: string[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const name = safeFileName(f.name, i);
+    const path = `${base}/${name}`;
+    const storageRef = ref(storageInstance, path);
+    await uploadBytes(storageRef, f, { contentType: f.type || "application/octet-stream" });
+    paths.push(path);
+  }
+  return paths;
+}
+
+/**
+ * Remove undefined keys from object to avoid Firestore setDoc errors.
  */
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -133,15 +159,20 @@ export async function getPlansFromFirestore(
 }
 
 /**
- * 从 Storage 按 filePaths 下载文件，用于刷新后恢复 PDF 预览。
+ * Load plan files from Storage. Includes initial filePaths + all additional run file paths.
  */
 export async function loadPlanFilesFromStorage(
   storageInstance: FirebaseStorage,
-  filePaths: string[]
+  filePaths: string[],
+  additionalRuns?: { file_paths: string[] }[]
 ): Promise<File[]> {
-  if (!filePaths?.length) return [];
+  const allPaths = [
+    ...(filePaths ?? []),
+    ...(additionalRuns ?? []).flatMap((r) => r.file_paths ?? []),
+  ];
+  if (!allPaths.length) return [];
   const files: File[] = [];
-  for (const path of filePaths) {
+  for (const path of allPaths) {
     try {
       const storageRef = ref(storageInstance, path);
       const url = await getDownloadURL(storageRef);

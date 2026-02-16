@@ -4,6 +4,7 @@
  */
 
 import type { AuditResponse, TriageItem } from "../audit_outputs/type_definitions";
+import { getEffectiveExpenseSamples } from "../services/expenseRunsHelpers";
 
 /** Tab IDs for Triage/AI Attempt – maps to area display names. Order: Balance Sheet, Levy Rec, GST & Compliance, Expenses */
 export const AREA_ORDER: readonly string[] = ["assets", "levy", "gstCompliance", "expense"];
@@ -47,8 +48,8 @@ export function buildAiAttemptTargets(
     });
   }
 
-  // System Identified: Expense FAIL / RISK_FLAG
-  (result.expense_samples || []).forEach((exp, i) => {
+  // System Identified: Expense FAIL / RISK_FLAG (use effective samples for expense_runs compat)
+  getEffectiveExpenseSamples(result).forEach((exp, i) => {
     if (exp.Overall_Status === "FAIL" || exp.Overall_Status === "RISK_FLAG") {
       targets.push({
         phase: "expenses",
@@ -133,7 +134,7 @@ export function buildSystemTriageItems(result: AuditResponse | null | undefined)
     });
   }
 
-  (result.expense_samples || []).forEach((exp, i) => {
+  getEffectiveExpenseSamples(result).forEach((exp, i) => {
     if (exp.Overall_Status === "FAIL" || exp.Overall_Status === "RISK_FLAG") {
       items.push({
         id: `sys-exp-${i}-${now}`,
@@ -198,7 +199,7 @@ export function mergeTriageWithSystem(
   if (result) {
     const levyVar = result.levy_reconciliation?.master_table?.Levy_Variance?.amount;
     if (levyVar == null || levyVar === 0) reconciledKeys.add("levy:levy_variance");
-    (result.expense_samples || []).forEach((exp, i) => {
+    getEffectiveExpenseSamples(result).forEach((exp, i) => {
       if (exp.Overall_Status !== "FAIL" && exp.Overall_Status !== "RISK_FLAG") reconciledKeys.add(`expense:exp_${i}`);
     });
     (result.assets_and_cash?.balance_sheet_verification || []).forEach((bs) => {

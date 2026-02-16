@@ -121,12 +121,23 @@ const VerificationStepSchema = z.object({
   evidence_ref: z.string(),
 });
 
+const SelectionDimensionSchema = z.enum([
+  "VALUE_COVERAGE",
+  "RISK_KEYWORD",
+  "MATERIALITY",
+  "ANOMALY_DESCRIPTION",
+  "SPLIT_PATTERN",
+  "RECURRING_NEAR_LIMIT",
+  "OTHER",
+]);
+
 /** Phase 3 v2: Risk-based expense selection */
 const ExpenseRiskProfileSchema = z.object({
   is_material: z.boolean(),
   risk_keywords: z.array(z.string()),
   is_split_invoice: z.boolean(),
   selection_reason: z.string(),
+  selection_dimension: SelectionDimensionSchema.optional(),
 });
 
 /** Phase 3 v2: Forensic evidence ref for expense pillars */
@@ -153,6 +164,22 @@ const InvoiceChecksSchema = z.object({
   abn_valid: InvoiceCheckItemSchema.optional(),
 });
 
+/** Payment sub-check: same structure as Invoice. */
+const PaymentCheckItemSchema = z.object({
+  passed: z.boolean(),
+  evidence: ExpenseEvidenceRefSchema.optional(),
+});
+
+/** Payment checks – per-check pass + evidence for Forensic. */
+const PaymentChecksSchema = z.object({
+  bank_account_match: PaymentCheckItemSchema.optional(),
+  payee_match: PaymentCheckItemSchema.optional(),
+  duplicate_check: PaymentCheckItemSchema.optional(),
+  split_payment_check: PaymentCheckItemSchema.optional(),
+  amount_match: PaymentCheckItemSchema.optional(),
+  date_match: PaymentCheckItemSchema.optional(),
+});
+
 /** Phase 3 v2: Three-way match */
 const ThreeWayMatchSchema = z.object({
   invoice: z.object({
@@ -170,6 +197,7 @@ const ThreeWayMatchSchema = z.object({
     amount_match: z.boolean(),
     source_doc: z.string().optional(),
     creditors_ref: z.string().optional(),
+    checks: PaymentChecksSchema.optional(),
     evidence: ExpenseEvidenceRefSchema.optional(),
   }),
   authority: z.object({
@@ -210,6 +238,16 @@ const ExpenseSampleSchema = z.object({
   Minute_Ref: z.string().optional(),
   Auth_Result: z.string().optional(),
   verification_steps: z.array(VerificationStepSchema).optional(),
+});
+
+/** Expense run – initial or additional. */
+const ExpenseRunSchema = z.object({
+  run_id: z.string(),
+  run_type: z.enum(["initial", "additional"]),
+  created_at: z.string(),
+  file_paths: z.array(z.string()).optional(),
+  document_ids: z.array(z.string()).optional(),
+  expense_samples: z.array(ExpenseSampleSchema),
 });
 
 /** Step 0: Full Balance Sheet extract – single source of truth for Phase 2/4/5 */
@@ -342,6 +380,7 @@ export const AuditResponseSchema = z.object({
     })
     .optional(),
   expense_samples: z.array(ExpenseSampleSchema).optional(),
+  expense_runs: z.array(ExpenseRunSchema).optional(),
   statutory_compliance: StatutoryComplianceSchema.optional(),
   completion_outputs: CompletionOutputsSchema.optional(),
 });

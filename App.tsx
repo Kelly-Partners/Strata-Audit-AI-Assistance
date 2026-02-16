@@ -9,7 +9,8 @@ import { callExecuteFullReview } from './services/gemini';
 import { mergeAiAttemptUpdates } from './services/mergeAiAttemptUpdates';
 import { buildAiAttemptTargets, buildSystemTriageItems, mergeTriageWithSystem, AREA_DISPLAY, AREA_ORDER } from './src/audit_engine/ai_attempt_targets';
 import { auth, db, storage, hasValidFirebaseConfig } from './services/firebase';
-import { uploadPlanFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore, getPlansFromFirestore, loadPlanFilesFromStorage, subscribePlanDoc } from './services/planPersistence';
+import { uploadPlanFiles, uploadAdditionalRunFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore, getPlansFromFirestore, loadPlanFilesFromStorage, subscribePlanDoc } from './services/planPersistence';
+import { getEffectiveExpenseSamples, ensureExpenseRuns } from './src/services/expenseRunsHelpers';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { Plan, PlanStatus, TriageItem, UserResolution, ResolutionType, FileMetaEntry } from './types';
@@ -74,6 +75,9 @@ const App: React.FC = () => {
   /** After AI Attempt completes, focus the AI Attempt tab so user sees the resolution table */
   const [focusTabAfterAction, setFocusTabAfterAction] = useState<'aiAttempt' | null>(null);
   const [createDraft, setCreateDraft] = useState<{ name: string; files: File[] }>({ name: "", files: [] });
+  /** Add Evidence for Vouching – separate upload entry */
+  const [isAdditionalModalOpen, setIsAdditionalModalOpen] = useState(false);
+  const [additionalFiles, setAdditionalFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
   // Login page state (参考 strata-tax-review-assistance 登录结构)
@@ -142,6 +146,8 @@ const App: React.FC = () => {
           result: p.result ?? null,
           triage: p.triage ?? [],
           user_resolutions: migrateResolutions(p.user_resolutions, p.user_overrides),
+          ai_attempt_history: p.ai_attempt_history ?? [],
+          additional_runs: p.additional_runs ?? [],
           error: p.error ?? null,
         }));
         setPlans(mapped);
@@ -164,7 +170,7 @@ const App: React.FC = () => {
       const hasCall2 = result && (
         (result.levy_reconciliation != null && Object.keys(result.levy_reconciliation?.master_table || {}).length > 0) ||
         (result.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
-        (result.expense_samples?.length ?? 0) > 0
+        getEffectiveExpenseSamples(result).length > 0
       );
       let triageToSet = docData.triage ?? [];
       if (hasCall2) {
@@ -194,6 +200,8 @@ const App: React.FC = () => {
                 result: docData.result ?? plan.result,
                 triage: triageToSet,
                 user_resolutions: docData.user_resolutions ?? plan.user_resolutions ?? [],
+                ai_attempt_history: docData.ai_attempt_history ?? plan.ai_attempt_history ?? [],
+                additional_runs: docData.additional_runs ?? plan.additional_runs ?? [],
                 error: docData.error ?? plan.error,
               }
             : plan
@@ -209,7 +217,7 @@ const App: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const loaded = await loadPlanFilesFromStorage(storage, activePlan.filePaths!);
+        const loaded = await loadPlanFilesFromStorage(storage, activePlan.filePaths!, activePlan.additional_runs);
         if (!cancelled && loaded.length > 0) {
           const meta = activePlan.fileMeta && activePlan.fileMeta.length === loaded.length
             ? activePlan.fileMeta
@@ -360,7 +368,7 @@ const App: React.FC = () => {
     const hasCall2 =
       (plan.result.levy_reconciliation != null && Object.keys(plan.result.levy_reconciliation?.master_table || {}).length > 0) ||
       (plan.result.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
-      (plan.result.expense_samples?.length ?? 0) > 0;
+      getEffectiveExpenseSamples(plan.result).length > 0;
     if (!hasCall2) return "call2";
     const hasCompliance = plan.result.statutory_compliance != null && typeof plan.result.statutory_compliance === "object";
     if (!hasCompliance) return "call2";
@@ -418,6 +426,12 @@ const App: React.FC = () => {
         levy_reconciliation: levyRes.levy_reconciliation,
         assets_and_cash: phase4Res.assets_and_cash,
         expense_samples: expensesRes.expense_samples,
+        expense_runs: [{
+          run_id: "initial",
+          run_type: "initial",
+          created_at: new Date().toISOString(),
+          expense_samples: expensesRes.expense_samples ?? [],
+        }],
         statutory_compliance: complianceRes.statutory_compliance,
       };
       const mergedTriage = mergeTriageWithSystem(targetPlan.triage, buildSystemTriageItems(merged), merged);
@@ -470,7 +484,7 @@ const App: React.FC = () => {
     const hasCall2 =
       (mergedSoFar.levy_reconciliation != null && Object.keys(mergedSoFar.levy_reconciliation?.master_table || {}).length > 0) ||
       (mergedSoFar.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
-      (mergedSoFar.expense_samples?.length ?? 0) > 0;
+      getEffectiveExpenseSamples(mergedSoFar).length > 0;
     if (!hasCall2) {
       updatePlan(planId, { error: "Please complete Call 2 before running AI Attempt." });
       return;
@@ -485,7 +499,10 @@ const App: React.FC = () => {
     setIsCreateModalOpen(false);
     const userId = firebaseUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
+    let filePaths: string[] = targetPlan.filePaths ?? [];
     try {
+      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+      updatePlan(planId, { filePaths });
       const res = await callExecuteFullReview({
         files: targetPlan.files,
         expectedPlanId: planId,
@@ -496,35 +513,45 @@ const App: React.FC = () => {
       });
       const resJson = res as { ai_attempt_updates?: unknown; ai_attempt_resolution_table?: { item?: string; issue_identified?: string; ai_attempt_conduct?: string; result?: string; status?: string }[] };
       const updates = resJson?.ai_attempt_updates;
-      const merged = mergeAiAttemptUpdates(mergedSoFar, updates ?? null);
+      const effectiveResult = { ...mergedSoFar, expense_samples: getEffectiveExpenseSamples(mergedSoFar) };
+      const merged = mergeAiAttemptUpdates(effectiveResult, updates ?? null);
       const AI_ATTEMPT_STATUS_ALLOWED = new Set(["VERIFIED", "VARIANCE", "PASS", "FAIL", "RISK_FLAG", "MISSING_BANK_STMT", "TIER_3_ONLY", "MISSING_LEVY_REPORT", "MISSING_BREAKDOWN", "NO_SUPPORT", "AUTHORISED", "UNAUTHORISED", "NO_MINUTES_FOUND", "MINUTES_NOT_AVAILABLE", "N/A"]);
+      let resolutionTable: Array<{ item: string; issue_identified: string; ai_attempt_conduct: string; result: string; status: string }>;
       if (Array.isArray(resJson?.ai_attempt_resolution_table) && resJson.ai_attempt_resolution_table.length > 0) {
-        merged.ai_attempt_resolution_table = resJson.ai_attempt_resolution_table.map((r) => ({
+        resolutionTable = resJson.ai_attempt_resolution_table.map((r) => ({
           ...r,
           status: (r?.status && AI_ATTEMPT_STATUS_ALLOWED.has(String(r.status).trim())) ? String(r.status).trim() : "N/A",
         }));
+        merged.ai_attempt_resolution_table = resolutionTable;
       } else {
-        // Fallback: build resolution table from targets so user always sees what was processed
-        merged.ai_attempt_resolution_table = targets.map((t) => ({
+        resolutionTable = targets.map((t) => ({
           item: t.description,
           issue_identified: t.source === "triage" ? "User flagged" : t.description,
           ai_attempt_conduct: "(Merged into report – see updated Levy/BS/Expense/Compliance sections)",
           result: "Patched",
           status: "–",
         }));
+        merged.ai_attempt_resolution_table = resolutionTable;
       }
+      const historyEntry = {
+        timestamp: Date.now(),
+        targetCount: targets.length,
+        resolutionTable,
+      };
+      const nextHistory = [...(targetPlan.ai_attempt_history ?? []), historyEntry];
       setFocusTabAfterAction("aiAttempt");
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
         status: "completed",
-        filePaths: targetPlan.filePaths ?? [],
+        filePaths,
         fileMeta: targetPlan.fileMeta,
         result: merged,
         triage: targetPlan.triage,
+        ai_attempt_history: nextHistory,
       });
       setPlans((prev) =>
         prev.map((p) =>
-          p.id === planId ? { ...p, status: "completed" as const, result: merged } : p
+          p.id === planId ? { ...p, status: "completed" as const, result: merged, filePaths, ai_attempt_history: nextHistory } : p
         )
       );
     } catch (err: unknown) {
@@ -532,7 +559,7 @@ const App: React.FC = () => {
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
         status: "failed",
-        filePaths: targetPlan.filePaths ?? [],
+        filePaths,
         fileMeta: targetPlan.fileMeta,
         error: errMessage,
       });
@@ -540,6 +567,79 @@ const App: React.FC = () => {
         prev.map((p) =>
           p.id === planId ? { ...p, status: "failed" as const, error: errMessage } : p
         )
+      );
+    }
+  };
+
+  const handleRunExpensesAdditional = async (planId: string, newFiles: File[]) => {
+    const targetPlan = plans.find((p) => p.id === planId);
+    if (!targetPlan || !firebaseUser || newFiles.length === 0) return;
+    const mergedSoFar = targetPlan.result;
+    if (!mergedSoFar?.document_register?.length || !mergedSoFar?.intake_summary) {
+      updatePlan(planId, { error: "Please complete Step 0 and Call 2 (Expenses) before adding evidence." });
+      return;
+    }
+    const hasExpenses = getEffectiveExpenseSamples(mergedSoFar).length > 0;
+    if (!hasExpenses) {
+      updatePlan(planId, { error: "Please run Call 2 Expenses first." });
+      return;
+    }
+    updatePlan(planId, { status: "processing", error: null });
+    setIsAdditionalModalOpen(false);
+    setAdditionalFiles([]);
+    const userId = firebaseUser.uid;
+    const baseDoc = { userId: userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
+    const runId = crypto.randomUUID();
+    try {
+      const filePaths = await uploadAdditionalRunFiles(storage, userId, planId, runId, newFiles);
+      const step0WithEffective = {
+        ...mergedSoFar,
+        expense_samples: getEffectiveExpenseSamples(mergedSoFar),
+      };
+      const res = await callExecuteFullReview({
+        files: newFiles,
+        expectedPlanId: planId,
+        mode: "expenses_additional",
+        step0Output: step0WithEffective,
+      });
+      const resJson = res as { document_register?: typeof mergedSoFar.document_register; expense_samples_additional?: typeof mergedSoFar.expense_samples };
+      const mergedDocRegister = resJson.document_register ?? mergedSoFar.document_register;
+      const samplesAdditional = resJson.expense_samples_additional ?? [];
+      const prevDocIds = new Set((mergedSoFar.document_register ?? []).map((r) => r.Document_ID));
+      const newDocIds = [...new Set((mergedDocRegister ?? []).map((r) => r.Document_ID).filter((id) => !prevDocIds.has(id)))];
+      const runs = ensureExpenseRuns(mergedSoFar).expense_runs ?? [];
+      const newRun: typeof runs[0] = {
+        run_id: runId,
+        run_type: "additional",
+        created_at: new Date().toISOString(),
+        file_paths: filePaths,
+        document_ids: [...new Set(newDocIds)],
+        expense_samples: samplesAdditional,
+      };
+      const updatedRuns = [...runs, newRun];
+      const merged: typeof mergedSoFar = {
+        ...mergedSoFar,
+        document_register: mergedDocRegister,
+        expense_runs: updatedRuns,
+      };
+      const runMeta = { run_id: runId, file_paths: filePaths, created_at: Date.now() };
+      const nextAdditionalRuns = [...(targetPlan.additional_runs ?? []), runMeta];
+      await savePlanToFirestore(db, planId, {
+        ...baseDoc,
+        status: "completed",
+        result: merged,
+        additional_runs: nextAdditionalRuns,
+      });
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === planId ? { ...p, status: "completed" as const, result: merged, additional_runs: nextAdditionalRuns } : p
+        )
+      );
+    } catch (err: unknown) {
+      const errMessage = (err as Error)?.message || "Additional run failed";
+      await savePlanToFirestore(db, planId, { ...baseDoc, status: "failed", error: errMessage });
+      setPlans((prev) =>
+        prev.map((p) => (p.id === planId ? { ...p, status: "failed" as const, error: errMessage } : p))
       );
     }
   };
@@ -1081,7 +1181,7 @@ const App: React.FC = () => {
                              <div className="flex justify-between items-center">
                                 <span className="text-caption font-bold text-gray-600">Traceable Items</span>
                                 <span className="text-section font-mono font-bold text-[#004F9F]">
-                                   {(plan.result.expense_samples?.length || 0) + (Object.keys(plan.result.levy_reconciliation?.master_table || {}).length)}
+                                   {getEffectiveExpenseSamples(plan.result).length + (Object.keys(plan.result.levy_reconciliation?.master_table || {}).length)}
                                 </span>
                              </div>
                           ) : plan.status === 'failed' && plan.error ? (
@@ -1188,6 +1288,8 @@ const App: React.FC = () => {
                     selectedFiles={activePlan.files}
                     fileMeta={activePlan.fileMeta}
                     planCreatedAt={activePlan.createdAt}
+                    lockedCount={activePlan.filePaths?.length ?? 0}
+                    showAddOnlyHint={(activePlan.filePaths?.length ?? 0) > 0}
                   />
                 </div>
               </details>
@@ -1202,12 +1304,15 @@ const App: React.FC = () => {
                     files={activePlan.files}
                     triageItems={activePlan.triage}
                     userResolutions={activePlan.user_resolutions ?? []}
+                    aiAttemptHistory={activePlan.ai_attempt_history ?? []}
+                    additionalRuns={activePlan.additional_runs ?? []}
                     onTriage={handleTriage}
                     onMarkOff={(item, type) => setMarkOffModal({ item, resolutionType: type })}
                     getResolution={(item) => getResolution(item, activePlan.user_resolutions ?? [])}
                     focusTab={focusTabAfterAction ?? focusTabRequest ?? undefined}
                     onFocusTabConsumed={() => { setFocusTabAfterAction(null); setFocusTabRequest(null); }}
                     onRequestFocusTab={(tab) => setFocusTabRequest(tab)}
+                    onAddEvidenceClick={activePlanId ? () => setIsAdditionalModalOpen(true) : undefined}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 text-gray-500">
@@ -1265,6 +1370,45 @@ const App: React.FC = () => {
                 className="px-8 py-3 font-bold text-caption uppercase tracking-widest rounded-sm bg-[#004F9F] text-white hover:bg-[#003d7a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Create & Open
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ADD EVIDENCE FOR VOUCHING MODAL --- */}
+      {isAdditionalModalOpen && activePlanId && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#004F9F] text-white px-8 py-6 flex justify-between items-center shrink-0 border-b border-[#003d7a]">
+              <h2 className="text-xl font-bold uppercase tracking-widest">Supplement Evidence – Add Invoices for Vouching</h2>
+              <button onClick={() => { setIsAdditionalModalOpen(false); setAdditionalFiles([]); }} className="text-white/80 hover:text-white transition-colors p-2">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <div className="p-8 overflow-y-auto bg-gray-50 space-y-6">
+              <p className="text-body text-gray-600">Upload invoices or receipts to supplement expense vouching. Only items with matching evidence will be re-vouched.</p>
+              <div>
+                <label className="block text-caption font-bold text-gray-400 uppercase tracking-wide mb-2">Additional Evidence Files</label>
+                <FileUpload
+                  onFilesSelected={setAdditionalFiles}
+                  selectedFiles={additionalFiles}
+                />
+              </div>
+            </div>
+            <div className="bg-white px-8 py-6 border-t border-gray-200 flex justify-end gap-4 shrink-0">
+              <button
+                onClick={() => { setIsAdditionalModalOpen(false); setAdditionalFiles([]); }}
+                className="px-6 py-3 font-bold text-gray-500 uppercase tracking-widest text-caption hover:text-black transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRunExpensesAdditional(activePlanId, additionalFiles)}
+                disabled={additionalFiles.length === 0}
+                className="px-8 py-3 font-bold text-caption uppercase tracking-widest rounded-sm bg-[#004F9F] text-white hover:bg-[#003d7a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Run Additional Vouching
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@
  */
 export {
   uploadPlanFiles,
+  uploadAdditionalRunFiles,
   savePlanToFirestore,
   getPlansFromFirestore,
   loadPlanFilesFromStorage,

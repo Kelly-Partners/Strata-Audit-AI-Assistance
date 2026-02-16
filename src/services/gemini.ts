@@ -10,6 +10,7 @@ import {
   buildLevyPrompt,
   buildPhase4Prompt,
   buildExpensesPrompt,
+  buildExpensesAdditionalPrompt,
   buildPhase5Prompt,
   buildAiAttemptPrompt,
 } from "../audit_engine";
@@ -44,8 +45,8 @@ export interface CallExecuteFullReviewOptions {
   apiKey?: string;
   previousAudit?: AuditResponse | null;
   expectedPlanId?: string;
-  /** step0_only: 仅 Step 0；levy|phase4|expenses|compliance|completion|aiAttempt: Call 2 单阶段（需 step0Output）；full: 完整审计（默认） */
-  mode?: "step0_only" | "levy" | "phase4" | "expenses" | "compliance" | "completion" | "aiAttempt" | "full";
+  /** step0_only: 仅 Step 0；levy|phase4|expenses|expenses_additional|compliance|completion|aiAttempt: Call 2 单阶段（需 step0Output）；full: 完整审计（默认） */
+  mode?: "step0_only" | "levy" | "phase4" | "expenses" | "expenses_additional" | "compliance" | "completion" | "aiAttempt" | "full";
   /** Call 2 时必传：Step 0 输出，作为 LOCKED 上下文注入 */
   step0Output?: AuditResponse | null;
   /** aiAttempt 时必传：待重核项列表 */
@@ -101,11 +102,13 @@ export async function callExecuteFullReview(
           ? buildPhase4Prompt()
           : mode === "expenses"
             ? buildExpensesPrompt()
-            : mode === "compliance"
-              ? buildPhase5Prompt()
-              : mode === "aiAttempt"
-                  ? buildAiAttemptPrompt(aiAttemptTargets)
-                  : buildSystemPrompt();
+            : mode === "expenses_additional"
+              ? buildExpensesAdditionalPrompt()
+              : mode === "compliance"
+                ? buildPhase5Prompt()
+                : mode === "aiAttempt"
+                    ? buildAiAttemptPrompt(aiAttemptTargets)
+                    : buildSystemPrompt();
 
   const body = {
     files: filesPayload,
@@ -115,7 +118,7 @@ export async function callExecuteFullReview(
     ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
     systemPrompt,
     fileManifest,
-    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "compliance" || mode === "aiAttempt" ? step0Output : previousAudit) ?? undefined,
+    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "expenses_additional" || mode === "compliance" || mode === "aiAttempt" ? step0Output : previousAudit) ?? undefined,
     mode,
     aiAttemptTargets: mode === "aiAttempt" ? aiAttemptTargets : undefined,
   };

@@ -37,11 +37,12 @@ async function executeFullReview(opts) {
 
   const isStep0Only = mode === "step0_only";
   const isCall2Phase = mode === "levy" || mode === "phase4" || mode === "expenses" ||
-    mode === "compliance" || mode === "completion" || mode === "aiAttempt";
+    mode === "expenses_additional" || mode === "compliance" || mode === "completion" || mode === "aiAttempt";
   const call2PhaseLabels = {
     levy: "Phase 2 (Levy Reconciliation)",
     phase4: "Phase 4 (Balance Sheet Verification)",
     expenses: "Phase 3 (Expenses Vouching)",
+    expenses_additional: "Phase 3 Additional Run (Supplement Evidence)",
     compliance: "Phase 5 (Statutory Compliance)",
     completion: "Phase 6 (Completion & Disclosure)",
     aiAttempt: "AI Attempt (Targeted Re-verification)",
@@ -50,6 +51,7 @@ async function executeFullReview(opts) {
     levy: "\"levy_reconciliation\"",
     phase4: "\"assets_and_cash\"",
     expenses: "\"expense_samples\"",
+    expenses_additional: "\"document_register\" and \"expense_samples_additional\"",
     compliance: "\"statutory_compliance\"",
     completion: "\"completion_outputs\"",
     aiAttempt: "\"ai_attempt_updates\" and \"ai_attempt_resolution_table\"",
@@ -76,6 +78,9 @@ ${mode === "phase4" ? `
 ` : ""}
 ${mode === "expenses" ? `
 5. [Phase 3 ONLY] Apply Evidence Tier: Invoice & Payment PAID = Tier 1; ACCRUED = Tier 2 (Creditors Report); Authority = Tier 2 (Minutes). Do NOT substitute lower-tier evidence.
+` : ""}
+${mode === "expenses_additional" ? `
+5. [Phase 3 Additional ONLY] Register attached files in document_register. Re-vouch ONLY expense items that match new evidence (by payee/amount/date). Return document_register (merged) and expense_samples_additional (re-vouched items only).
 ` : ""}
 ${mode === "completion" ? `
 5. [Phase 6 ONLY] Aggregate issue_register from levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance in the LOCKED context. Document boundary_disclosure from missing_critical_types, Not Resolved findings, boundary_defined, and bs_extract_warning.

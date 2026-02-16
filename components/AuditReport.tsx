@@ -18,9 +18,11 @@ import {
   PlExtract,
   PlExtractRow,
   ExpenseSample,
+  AiAttemptHistoryEntry,
 } from '../types';
 import { buildAiAttemptTargets, AREA_DISPLAY, AREA_ORDER } from '../src/audit_engine/ai_attempt_targets';
 import { DOCUMENT_TYPES_WITH_TIER } from '../src/audit_engine/workflow/step_0_intake';
+import { getEffectiveExpenseSamples } from '../src/services/expenseRunsHelpers';
 
 /** Extract 1-based page number from various ref formats: "Page 3", "p.3", "pg 3", "3" */
 function extractPageNumber(s: string): string | null {
@@ -44,6 +46,12 @@ interface AuditReportProps {
   onFocusTabConsumed?: () => void;
   /** Request tab focus for jump-from-AI-Attempt (e.g. navigate to Levy / Balance Sheet) */
   onRequestFocusTab?: (tab: 'levy' | 'assets' | 'expense' | 'gstCompliance') => void;
+  /** Audit trail: one entry per Run AI Attempt (for traceability) */
+  aiAttemptHistory?: AiAttemptHistoryEntry[];
+  /** Additional run metadata for expense vouching (multi-round supplement) */
+  additionalRuns?: { run_id: string; file_paths: string[]; created_at: number }[];
+  /** Opens the Add Evidence for Vouching modal */
+  onAddEvidenceClick?: () => void;
 }
 
 // Forensic Cell Component - Upgraded for UI Spec + High Visibility
@@ -438,7 +446,7 @@ const ExpenseForensicPopover: React.FC<{
           <div className="p-5 space-y-4 max-h-[400px] overflow-y-auto">
             {hasSubChecks ? (
               <>
-                <span className="text-caption uppercase text-gray-400 font-bold block mb-2 tracking-widest">Invoice checks</span>
+                <span className="text-caption uppercase text-gray-400 font-bold block mb-2 tracking-widest">{payload.title} checks</span>
                 {payload.subChecks!.map((sc, i) => {
                   const hasEvidence = sc.source_doc_id && sc.source_doc_id !== '-' && sc.source_doc_id !== 'N/A';
                   const scDoc = hasEvidence ? resolveDocForExpense(safeDocs, sc.source_doc_id!) : undefined;
@@ -587,13 +595,34 @@ function buildExpenseForensicPayload(
     }
     case 'PAY': {
       const ev = pay?.evidence;
-      const docId = ev?.source_doc_id ?? '–';
+      const { docId, pageRef } = ev?.source_doc_id ? { docId: ev.source_doc_id, pageRef: ev.page_ref || '' } : { docId: '–', pageRef: '' };
+      const checks = pay?.checks;
+      const PAY_CHECK_LABELS: Record<string, string> = {
+        bank_account_match: 'Bank account (OC)',
+        payee_match: 'Payee match',
+        duplicate_check: 'Duplicate check',
+        split_payment_check: 'Split payment',
+        amount_match: 'Amount match',
+        date_match: 'Date match',
+      };
+      const subChecks: ExpenseForensicSubCheck[] | undefined = checks
+        ? (['bank_account_match', 'payee_match', 'duplicate_check', 'split_payment_check', 'amount_match', 'date_match'] as const)
+            .filter((k) => checks[k] != null)
+            .map((k) => ({
+              label: PAY_CHECK_LABELS[k] ?? k,
+              passed: checks[k]!.passed,
+              source_doc_id: checks[k]?.evidence?.source_doc_id,
+              page_ref: checks[k]?.evidence?.page_ref,
+              note: checks[k]?.evidence?.note,
+            }))
+        : undefined;
       return {
         title: 'Payment',
         source_doc_id: docId,
-        page_ref: ev?.page_ref ?? '',
+        page_ref: pageRef,
         note: ev?.note ?? (pay ? `Status: ${pay.status}. Ref: ${pay.source_doc || pay.creditors_ref || '–'}. ${pay.bank_date ? pay.bank_date : ''}`.trim() || '–' : '–'),
         extracted_amount: ev?.extracted_amount ?? item.GL_Amount?.amount,
+        subChecks: subChecks && subChecks.length > 0 ? subChecks : undefined,
       };
     }
     case 'AUTH': {
@@ -841,7 +870,8 @@ const TAB_TO_FOCUS: Record<string, 'levy' | 'assets' | 'expense' | 'gstComplianc
 
 export const AuditReport: React.FC<AuditReportProps> = ({
   data, files, triageItems, userResolutions = [], onTriage, onMarkOff, getResolution,
-  focusTab, onFocusTabConsumed, onRequestFocusTab,
+  focusTab, onFocusTabConsumed, onRequestFocusTab, aiAttemptHistory = [],
+  additionalRuns = [], onAddEvidenceClick,
 }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'levy' | 'assets' | 'expense' | 'gstCompliance' | 'aiAttempt' | 'completion'>('docs');
   const [activeVerificationSteps, setActiveVerificationSteps] = useState<VerificationStep[] | null>(null);
@@ -1749,19 +1779,72 @@ export const AuditReport: React.FC<AuditReportProps> = ({
         )}
 
         {/* EXPENSES – Phase 3 v2 (risk-based) or legacy */}
-        {activeTab === 'expense' && data.expense_samples && (() => {
-            const isV2 = data.expense_samples.some((s) => s.Risk_Profile && s.Three_Way_Match);
+        {activeTab === 'expense' && (() => {
+            const effectiveSamples = getEffectiveExpenseSamples(data);
+            if (!effectiveSamples.length) return null;
+            const isV2 = effectiveSamples.some((s) => s.Risk_Profile && s.Three_Way_Match);
+            const DIMENSION_ORDER = ['VALUE_COVERAGE', 'RISK_KEYWORD', 'MATERIALITY', 'ANOMALY_DESCRIPTION', 'SPLIT_PATTERN', 'RECURRING_NEAR_LIMIT', 'OTHER'] as const;
+            const DIMENSION_LABELS: Record<string, string> = {
+              VALUE_COVERAGE: '1. Value-weighted (cumulative ≥ 70% total expenditure)',
+              RISK_KEYWORD: '2. Risk stratification (Legal / Consultant / Capital works)',
+              MATERIALITY: '3. Materiality (dynamic threshold)',
+              ANOMALY_DESCRIPTION: '4. Anomaly (vague description + amount)',
+              SPLIT_OR_RECURRING: '5. Split / Recurring (split or low-value high-frequency)',
+              OTHER: 'Other (no dimension or legacy data)',
+            };
+            const hasDimensions = effectiveSamples.some((s) => s.Risk_Profile?.selection_dimension);
+            const DISPLAY_GROUP = (d: string) => (d === 'SPLIT_PATTERN' || d === 'RECURRING_NEAR_LIMIT' ? 'SPLIT_OR_RECURRING' : d);
+            const DISPLAY_ORDER = ['VALUE_COVERAGE', 'RISK_KEYWORD', 'MATERIALITY', 'ANOMALY_DESCRIPTION', 'SPLIT_OR_RECURRING', 'OTHER'] as const;
+            const grouped = hasDimensions
+              ? (() => {
+                  const map = new Map<string, typeof effectiveSamples>();
+                  for (const item of effectiveSamples) {
+                    const raw = item.Risk_Profile?.selection_dimension && DIMENSION_ORDER.includes(item.Risk_Profile.selection_dimension as typeof DIMENSION_ORDER[number])
+                      ? item.Risk_Profile.selection_dimension
+                      : 'OTHER';
+                    const dim = DISPLAY_GROUP(raw);
+                    if (!map.has(dim)) map.set(dim, []);
+                    map.get(dim)!.push(item);
+                  }
+                  return DISPLAY_ORDER.filter((d) => map.has(d)).map((d) => ({ dimension: d, items: map.get(d)! }));
+                })()
+              : [{ dimension: 'OTHER' as const, items: effectiveSamples }];
             return (
             <div className="bg-white p-8 rounded border border-gray-200 shadow-sm">
-                 <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
-                    <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table I.1: Expense Vouching Schedule</h3>
-                    {isV2 && <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Risk-based sampling – Three-Way Match & Fund Integrity</p>}
+                 <div className="border-b-2 border-[#004F9F] pb-3 mb-6 flex justify-between items-start gap-4 flex-wrap">
+                    <div>
+                      <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table I.1: Expense Vouching Schedule</h3>
+                      {isV2 && <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Risk-based sampling – Three-Way Match & Fund Integrity</p>}
+                    </div>
+                    {onAddEvidenceClick && (
+                      <button
+                        onClick={onAddEvidenceClick}
+                        className="px-4 py-2 text-caption font-bold uppercase tracking-widest rounded-sm bg-[#004F9F] text-white hover:bg-[#003d7a] transition-colors shrink-0"
+                      >
+                        Add Evidence for Vouching
+                      </button>
+                    )}
                  </div>
+                 {additionalRuns.length > 0 && (
+                   <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+                     <span className="text-caption font-bold text-gray-500 uppercase tracking-wide block mb-2">Supplement Evidence Runs</span>
+                     <ul className="space-y-1 text-body text-gray-600">
+                       {additionalRuns.map((r, i) => (
+                         <li key={r.run_id}>Run {i + 1}: {r.file_paths?.length ?? 0} files – {new Date(r.created_at).toLocaleString()}</li>
+                       ))}
+                     </ul>
+                   </div>
+                 )}
                  <div className="overflow-x-auto">
                     <table className="min-w-full text-left border border-gray-200">
                         <thead className="bg-gray-100 text-black uppercase text-heading-sm font-bold tracking-wider">
                             <tr>
-                                {isV2 && <th className="px-5 py-4 border-b border-gray-200">Risk</th>}
+                                {isV2 && (
+                                  <>
+                                    <th className="px-5 py-4 border-b border-gray-200">Selection</th>
+                                    <th className="px-5 py-4 border-b border-gray-200">Evidence Risk</th>
+                                  </>
+                                )}
                                 <th className="px-5 py-4 border-b border-gray-200">GL Date / Payee</th>
                                 <th className="px-5 py-4 border-b border-gray-200">Amount</th>
                                 {isV2 ? (
@@ -1782,13 +1865,35 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-heading-sm">
-                            {data.expense_samples.map((item, idx) => {
+                            {grouped.flatMap(({ dimension, items }) => [
+                              ...(hasDimensions ? [(
+                                <tr key={`h-${dimension}`} className="bg-[#004F9F]/10">
+                                  <td colSpan={isV2 ? 9 : 5} className="px-5 py-3 text-left font-bold text-[#004F9F] uppercase text-body tracking-wide border-b border-[#004F9F]/30">
+                                    {DIMENSION_LABELS[dimension] ?? dimension} ({items.length})
+                                  </td>
+                                </tr>
+                              )] : []),
+                              ...items.map((item) => {
+                                const idx = effectiveSamples.indexOf(item);
                                 if (isV2) {
                                     const inv = item.Three_Way_Match?.invoice;
                                     const pay = item.Three_Way_Match?.payment;
                                     const auth = item.Three_Way_Match?.authority;
                                     const fund = item.Fund_Integrity;
                                     const isMisclassified = fund?.classification_status === 'MISCLASSIFIED';
+                                    const evidenceTags: { label: string; cls: string }[] = [];
+                                    if (pay?.status === 'BANK_STMT_MISSING') {
+                                      evidenceTags.push({ label: 'Bank Missing', cls: 'bg-orange-100 text-orange-800' });
+                                    }
+                                    if (pay?.status === 'MISSING') {
+                                      evidenceTags.push({ label: 'Payment Missing', cls: 'bg-red-100 text-red-800' });
+                                    }
+                                    if (auth?.status === 'MINUTES_NOT_AVAILABLE' || auth?.status === 'NO_MINUTES_FOUND') {
+                                      evidenceTags.push({ label: 'Minutes Missing', cls: 'bg-amber-100 text-amber-800' });
+                                    }
+                                    if (fund?.classification_status === 'UNCERTAIN') {
+                                      evidenceTags.push({ label: 'Fund Uncertain', cls: 'bg-gray-200 text-gray-800' });
+                                    }
                                     return (
                                         <tr key={idx} className={`hover:bg-gray-50 align-top transition-colors group ${isMisclassified ? 'bg-yellow-50' : ''}`}>
                                             <td className="px-5 py-4 border-r border-gray-100">
@@ -1798,8 +1903,20 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                         {(item.Risk_Profile.risk_keywords || []).slice(0, 3).map((k, i) => (
                                                             <span key={i} className="px-1.5 py-0.5 text-micro font-bold uppercase bg-purple-100 text-purple-800 rounded">{k}</span>
                                                         ))}
+                                                        {item.Risk_Profile.is_split_invoice && <span className="px-1.5 py-0.5 text-micro font-bold uppercase bg-amber-100 text-amber-800 rounded">Split</span>}
                                                     </div>
                                                 ) : '–'}
+                                            </td>
+                                            <td className="px-5 py-4 border-r border-gray-100">
+                                                {evidenceTags.length > 0 ? (
+                                                  <div className="flex flex-wrap gap-1">
+                                                    {evidenceTags.map((t) => (
+                                                      <span key={t.label} className={`px-1.5 py-0.5 text-micro font-bold uppercase rounded ${t.cls}`}>{t.label}</span>
+                                                    ))}
+                                                  </div>
+                                                ) : (
+                                                  <span className="text-gray-400">–</span>
+                                                )}
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100">
                                                 <div className="text-body text-gray-500 mb-1">{item.GL_Date}</div>
@@ -1820,7 +1937,15 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
                                                 <button type="button" onClick={() => setExpenseForensic({ pillar: 'PAY', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
-                                                    {pay ? (pay.status === 'PAID' ? '✅' : pay.status === 'ACCRUED' ? '⏳' : '❌') : '–'}
+                                                    {pay ? (() => {
+                                                      const c = pay.checks;
+                                                      const keys = c ? (['bank_account_match', 'payee_match', 'duplicate_check', 'split_payment_check', 'amount_match', 'date_match'] as const).filter((k) => c![k] != null) : [];
+                                                      const allPassed = keys.length > 0
+                                                        ? keys.every((k) => c![k]!.passed)
+                                                        : (pay.status === 'PAID' || pay.status === 'ACCRUED') && pay.amount_match;
+                                                      if (keys.length > 0) return allPassed ? '✅' : '⚠';
+                                                      return pay.status === 'PAID' ? '✅' : pay.status === 'ACCRUED' ? '⏳' : '❌';
+                                                    })() : '–'}
                                                 </button>
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
@@ -1877,7 +2002,8 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                     </td>
                                 </tr>
                                 );
-                            })}
+                            })
+                            ])}
                         </tbody>
                     </table>
                  </div>
@@ -2186,6 +2312,44 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             </tbody>
                         </table>
                     </div>
+                )}
+                {aiAttemptHistory.length > 0 && (
+                    <details className="mt-8 border border-gray-200 rounded overflow-hidden">
+                        <summary className="px-4 py-3 bg-gray-50 cursor-pointer text-caption font-bold text-gray-700 uppercase tracking-wider hover:bg-gray-100">
+                            Audit Trail ({aiAttemptHistory.length} run{aiAttemptHistory.length !== 1 ? 's' : ''})
+                        </summary>
+                        <div className="divide-y divide-gray-100">
+                            {[...aiAttemptHistory].reverse().map((entry, i) => (
+                                <div key={i} className="px-4 py-3 bg-white">
+                                    <div className="text-micro text-gray-500 mb-2">
+                                        Run #{aiAttemptHistory.length - i} – {new Date(entry.timestamp).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })} • {entry.targetCount} target{entry.targetCount !== 1 ? 's' : ''}
+                                    </div>
+                                    <table className="min-w-full text-left text-caption border border-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-3 py-2 border-b">Item</th>
+                                                <th className="px-3 py-2 border-b">Issue</th>
+                                                <th className="px-3 py-2 border-b">Conduct</th>
+                                                <th className="px-3 py-2 border-b">Result</th>
+                                                <th className="px-3 py-2 border-b">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {entry.resolutionTable.map((r, j) => (
+                                                <tr key={j} className="border-t border-gray-100">
+                                                    <td className="px-3 py-2 text-gray-800">{r.item}</td>
+                                                    <td className="px-3 py-2 text-gray-600">{r.issue_identified}</td>
+                                                    <td className="px-3 py-2 text-gray-600 italic">{r.ai_attempt_conduct}</td>
+                                                    <td className="px-3 py-2 text-gray-700">{r.result}</td>
+                                                    <td className="px-3 py-2"><StatusBadge status={r.status} /></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ))}
+                        </div>
+                    </details>
                 )}
             </div>
         )}

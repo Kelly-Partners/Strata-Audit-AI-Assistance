@@ -1,7 +1,7 @@
 /**
- * Phase 1–5 具体 item 的细化规则与指导（优先级、白名单证据链等）。
- * 各 phase_X_rules.ts 导出 PHASE_X_RULES_PROMPT，在 buildSystemPrompt 中接在对应 Phase 后注入。
- * 新增规则：在本目录下增加或编辑 phase_X_rules.ts，并在本 index 与 audit_engine/index 中挂接。
+ * Phase 1–5 item-level rules and guidance (priority, whitelist evidence chain, etc.).
+ * Each phase_X_rules.ts exports PHASE_X_RULES_PROMPT, injected after the corresponding Phase in buildSystemPrompt.
+ * To add rules: create or edit phase_X_rules.ts in this directory and wire it in this index and audit_engine/index.
  */
 
 export * from "./types";

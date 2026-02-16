@@ -2365,6 +2365,18 @@
               },
               "selection_reason": {
                 "type": "string"
+              },
+              "selection_dimension": {
+                "type": "string",
+                "enum": [
+                  "VALUE_COVERAGE",
+                  "RISK_KEYWORD",
+                  "MATERIALITY",
+                  "ANOMALY_DESCRIPTION",
+                  "SPLIT_PATTERN",
+                  "RECURRING_NEAR_LIMIT",
+                  "OTHER"
+                ]
               }
             },
             "required": [
@@ -2633,6 +2645,192 @@
                   },
                   "creditors_ref": {
                     "type": "string"
+                  },
+                  "checks": {
+                    "type": "object",
+                    "properties": {
+                      "bank_account_match": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "payee_match": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "duplicate_check": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "split_payment_check": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "amount_match": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "date_match": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "evidence": {
                     "type": "object",

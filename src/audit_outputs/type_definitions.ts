@@ -220,11 +220,22 @@ export interface VerificationStep {
 }
 
 /** Phase 3 v2: Risk-based expense – why this item was selected */
+export type SelectionDimension =
+  | "VALUE_COVERAGE"
+  | "RISK_KEYWORD"
+  | "MATERIALITY"
+  | "ANOMALY_DESCRIPTION"
+  | "SPLIT_PATTERN"
+  | "RECURRING_NEAR_LIMIT"
+  | "OTHER";
+
 export interface ExpenseRiskProfile {
   is_material: boolean;
   risk_keywords: string[];
   is_split_invoice: boolean;
   selection_reason: string;
+  /** Primary dimension for UI grouping – assign one per item. Use OTHER when unclear. */
+  selection_dimension?: SelectionDimension;
 }
 
 /** Optional forensic evidence for expense pillars (Source Doc, Doc ID, Context/Note, View in PDF). */
@@ -252,6 +263,22 @@ export interface InvoiceChecks {
   abn_valid?: InvoiceCheckItem;
 }
 
+/** Payment sub-check: passed + evidence for forensic trace per check (same structure as Invoice). */
+export interface PaymentCheckItem {
+  passed: boolean;
+  evidence?: ExpenseEvidenceRef;
+}
+
+/** Payment checks: per-check pass + evidence for Forensic. Aligns with audit assertions. */
+export interface PaymentChecks {
+  bank_account_match?: PaymentCheckItem;
+  payee_match?: PaymentCheckItem;
+  duplicate_check?: PaymentCheckItem;
+  split_payment_check?: PaymentCheckItem;
+  amount_match?: PaymentCheckItem;
+  date_match?: PaymentCheckItem;
+}
+
 /** Phase 3 v2: Three-way match (Invoice / Payment / Authority) */
 export interface ThreeWayMatch {
   invoice: {
@@ -272,6 +299,8 @@ export interface ThreeWayMatch {
     amount_match: boolean;
     source_doc?: string;
     creditors_ref?: string;
+    /** Per-check pass + evidence (each links to PDF) – same granularity as invoice. */
+    checks?: PaymentChecks;
     /** Forensic: page_ref and context for Evidence Chain popover. source_doc used as Doc ID when evidence not set. */
     evidence?: ExpenseEvidenceRef;
   };
@@ -293,6 +322,18 @@ export interface FundIntegrity {
   note?: string;
   /** Forensic: Doc ID / page for Evidence Chain popover (e.g. GL or invoice doc). */
   evidence?: ExpenseEvidenceRef;
+}
+
+/** Expense run – initial or additional. Enables multi-round evidence supplement without overwriting. */
+export interface ExpenseRun {
+  run_id: string;
+  run_type: "initial" | "additional";
+  created_at: string;
+  /** For additional runs: Storage paths for this run's files */
+  file_paths?: string[];
+  /** For additional runs: Document_IDs from document_register for this run's new files */
+  document_ids?: string[];
+  expense_samples: ExpenseSample[];
 }
 
 /** Phase 3 v2: Audit Evidence Package (risk-based sampling + three-way match + fund integrity). New fields optional for backward compat with old expense_samples. */
@@ -395,7 +436,10 @@ export interface AuditResponse {
   pl_extract?: PlExtract | null;
   levy_reconciliation?: LevyReconciliation;
   assets_and_cash?: AssetsAndCash;
+  /** Legacy: flat expense_samples. Prefer expense_runs when present. */
   expense_samples?: ExpenseSample[];
+  /** Phase 3 multi-round: initial + additional runs. UI uses combined view. */
+  expense_runs?: ExpenseRun[];
   statutory_compliance?: StatutoryCompliance;
   completion_outputs?: CompletionOutputs;
   /** AI Attempt: Resolution table (Items, Issue identified, AI Attempt conduct, Result, Status) */
@@ -409,6 +453,13 @@ export interface AiAttemptResolutionRow {
   ai_attempt_conduct: string;
   result: string;
   status: string;
+}
+
+/** Audit trail: one entry per Run AI Attempt */
+export interface AiAttemptHistoryEntry {
+  timestamp: number;
+  targetCount: number;
+  resolutionTable: AiAttemptResolutionRow[];
 }
 
 export interface TriageItem {
@@ -450,6 +501,14 @@ export interface FileMetaEntry {
   batch: "initial" | "additional";
 }
 
+/** Additional run metadata – one per "Add Evidence for Vouching" run */
+export interface AdditionalRunMeta {
+  run_id: string;
+  file_paths: string[];
+  document_ids?: string[];
+  created_at: number;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -466,5 +525,9 @@ export interface Plan {
   user_resolutions?: UserResolution[];
   /** @deprecated Use user_resolutions */
   user_overrides?: UserOverride[];
+  /** Audit trail: one entry per Run AI Attempt (for traceability) */
+  ai_attempt_history?: AiAttemptHistoryEntry[];
+  /** Additional evidence runs for expense vouching (multi-round supplement) */
+  additional_runs?: AdditionalRunMeta[];
   error: string | null;
 }

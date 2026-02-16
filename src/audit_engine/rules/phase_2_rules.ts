@@ -1,11 +1,11 @@
 /**
- * Phase 2 – Levy/Revenue 的细化规则（证据来源约束）。
- * Financial Year 与 Old/New Rate（采纳日、比例）仅允许从 minutes 取得，在此定义并注入 prompt。
+ * Phase 2 – Levy/Revenue item-level rules (evidence source constraints).
+ * Financial Year and Old/New Rate (adoption date, proportion) must be sourced from minutes only; defined and injected here.
  */
 
 import type { PhaseItemRule, PhaseRulesMap } from "./types";
 
-/** Phase 2 各 item 的规则定义 */
+/** Phase 2 item rules definition */
 export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
   levy_financial_year: {
     guidance:
@@ -145,7 +145,7 @@ RULE SET (ENFORCE): GST is applied only to (B1) STANDARD LEVIES. Administrative 
 GST applies to (B1) Standard Levies and Special Levies. GST must NOT be applied to: Opening balances, Levies in arrears, Levies paid in advance, Interest, Recoveries, or Adjustments.
 `;
 
-/** 将 Phase 2 的 item 规则格式化为注入 system prompt 的文本 */
+/** Format Phase 2 item rules into text injected into the system prompt */
 function formatPhase2RulesPrompt(): string {
   const lines: string[] = [
     "",

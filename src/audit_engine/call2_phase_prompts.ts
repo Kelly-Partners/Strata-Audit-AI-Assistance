@@ -8,7 +8,7 @@ import { EVIDENCE_RULES_PROMPT } from "./kernel/20_evidence_rules";
 import { PHASE_2_RULES_PROMPT, PHASE_4_RULES_PROMPT } from "./rules";
 import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
 import { PHASE_4_ASSETS_PROMPT } from "./workflow/phase_4_assets";
-import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY } from "./workflow/phase_3_expenses";
+import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY, PHASE_3_ADDITIONAL_PROMPT } from "./workflow/phase_3_expenses";
 import { PHASE_5_COMPLIANCE_PROMPT } from "./workflow/phase_5_compliance";
 import { PHASE_AI_ATTEMPT_PROMPT } from "./workflow/phase_ai_attempt";
 import { MODULE_50_OUTPUTS_PROMPT } from "../audit_outputs/output_registry";
@@ -31,6 +31,17 @@ const PHASE4_OUTPUT_SCHEMA = `
 --- OUTPUT: Return ONLY assets_and_cash ---
 You must return a JSON object with a single key "assets_and_cash" containing balance_sheet_verification array.
 See MODULE 50 for the full assets_and_cash structure. Apply Phase 4 rules R1–R5 strictly. supporting_amount per R2–R5.
+`;
+
+/** Expenses additional output: document_register (merged) + expense_samples_additional (re-vouched items only) */
+const EXPENSES_ADDITIONAL_OUTPUT_SCHEMA = `
+--- OUTPUT: Return document_register AND expense_samples_additional ---
+You must return a JSON object with TWO keys:
+
+1) "document_register" – MERGED array (existing rows + new rows for attached files). Assign Document_ID for new files (continue numbering, e.g. Sys_007).
+2) "expense_samples_additional" – array of expense items that were re-vouched using the new evidence. Same structure as expense_samples (GL_ID, GL_Date, GL_Payee, GL_Amount, Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status). Include ONLY items where new evidence was matched and used.
+
+Do NOT return items that had no new evidence.
 `;
 
 /** Expenses-only output: return expense_samples (Phase 3 v2 risk-based structure) */
@@ -150,5 +161,19 @@ export function buildExpensesPrompt(): string {
     PHASE_3_EXPENSES_PROMPT +
     MODULE_50_OUTPUTS_PROMPT +
     EXPENSES_OUTPUT_SCHEMA
+  );
+}
+
+/** Build prompt for expenses additional run (supplement evidence – re-vouch only items with new evidence) */
+export function buildExpensesAdditionalPrompt(): string {
+  return (
+    HIERARCHY_INTRO +
+    EVIDENCE_RULES_PROMPT +
+    HIERARCHY_AFTER_EVIDENCE +
+    LOCKED_CONTEXT_INSTRUCTION +
+    PHASE_3_ADDITIONAL_PROMPT +
+    PHASE_3_FUND_INTEGRITY +
+    MODULE_50_OUTPUTS_PROMPT +
+    EXPENSES_ADDITIONAL_OUTPUT_SCHEMA
   );
 }

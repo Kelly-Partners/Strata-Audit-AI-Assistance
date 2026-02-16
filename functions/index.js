@@ -12,6 +12,32 @@ const admin = require("firebase-admin");
 const {CORS_ALLOWED_ORIGINS} = require("./constants");
 const {executeFullReview} = require("./geminiReview");
 
+/** Get effective expense_samples from result (expense_runs combined or legacy expense_samples). */
+function getEffectiveExpenseSamples(result) {
+  if (!result) return [];
+  if (result.expense_runs?.length) {
+    const list = [];
+    const indexByGlId = new Map();
+    for (let r = 0; r < result.expense_runs.length; r++) {
+      const run = result.expense_runs[r];
+      const runSamples = run.expense_samples || [];
+      for (let i = 0; i < runSamples.length; i++) {
+        const s = runSamples[i];
+        const key = s.GL_ID ?? `_${r}_${i}`;
+        const idx = indexByGlId.get(key);
+        if (idx !== undefined) {
+          list[idx] = s;
+        } else {
+          indexByGlId.set(key, list.length);
+          list.push(s);
+        }
+      }
+    }
+    return list;
+  }
+  return result.expense_samples || [];
+}
+
 if (!admin.apps.length) admin.initializeApp();
 
 setGlobalOptions({maxInstances: 10});
@@ -101,7 +127,7 @@ exports.executeFullReview = onRequest(
         const mode = body.mode || "full";
         const call2Phases = ["levy", "phase4", "expenses", "compliance"];
 
-        if (planId && userId) {
+        if (planId && userId && mode !== "expenses_additional") {
           const db = admin.firestore();
           const planRef = db.doc(`plans/${planId}`);
           try {
@@ -141,16 +167,19 @@ exports.executeFullReview = onRequest(
                   }
                   fullResult.assets_and_cash = {...fullResult.assets_and_cash, balance_sheet_verification: verif};
                 }
-                if (ups?.expense_updates?.length && fullResult.expense_samples) {
-                  const samples = [...fullResult.expense_samples];
-                  for (const u of ups.expense_updates) {
-                    const match = (u.merge_key || "").match(/^exp_(\d+)$/);
-                    if (match) {
-                      const idx = parseInt(match[1], 10);
-                      if (idx >= 0 && idx < samples.length && u.item) samples[idx] = u.item;
+                if (ups?.expense_updates?.length) {
+                  const effective = getEffectiveExpenseSamples(fullResult);
+                  if (effective.length > 0) {
+                    const samples = [...effective];
+                    for (const u of ups.expense_updates) {
+                      const match = (u.merge_key || "").match(/^exp_(\d+)$/);
+                      if (match) {
+                        const idx = parseInt(match[1], 10);
+                        if (idx >= 0 && idx < samples.length && u.item) samples[idx] = u.item;
+                      }
                     }
+                    fullResult.expense_samples = samples;
                   }
-                  fullResult.expense_samples = samples;
                 }
                 if (ups?.statutory_compliance && Object.keys(ups.statutory_compliance).length > 0) {
                   fullResult.statutory_compliance = {...fullResult.statutory_compliance, ...ups.statutory_compliance};
