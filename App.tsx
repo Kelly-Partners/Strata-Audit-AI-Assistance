@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
+import { ReportSkeleton } from './components/ReportSkeleton';
 import { callExecuteFullReview } from './services/gemini';
 import { mergeAiAttemptUpdates } from './services/mergeAiAttemptUpdates';
 import { buildAiAttemptTargets, buildSystemTriageItems, mergeTriageWithSystem, AREA_DISPLAY, AREA_ORDER } from './src/audit_engine/ai_attempt_targets';
@@ -157,7 +158,7 @@ const App: React.FC = () => {
   // Real-time sync: when active plan is updated in Firestore (e.g. by Cloud Function after refresh), merge into local state
   // Auto-populate triage from Phase 2-5 non-reconciled items when result has Call 2 data
   useEffect(() => {
-    if (!activePlanId || !hasValidFirebaseConfig) return;
+    if (!activePlanId || !firebaseUser || !hasValidFirebaseConfig) return;
     const unsub = subscribePlanDoc(db, activePlanId, async (docData) => {
       const result = docData.result;
       const hasCall2 = result && (
@@ -200,7 +201,7 @@ const App: React.FC = () => {
       });
     });
     return unsub;
-  }, [activePlanId, hasValidFirebaseConfig]);
+  }, [activePlanId, firebaseUser?.uid, hasValidFirebaseConfig]);
 
   // Load files from Storage when user selects a plan that has filePaths but no local files (e.g. after refresh)
   useEffect(() => {
@@ -361,6 +362,8 @@ const App: React.FC = () => {
       (plan.result.assets_and_cash?.balance_sheet_verification?.length ?? 0) > 0 ||
       (plan.result.expense_samples?.length ?? 0) > 0;
     if (!hasCall2) return "call2";
+    const hasCompliance = plan.result.statutory_compliance != null && typeof plan.result.statutory_compliance === "object";
+    if (!hasCompliance) return "call2";
     return "aiAttempt";
   };
 
@@ -491,11 +494,15 @@ const App: React.FC = () => {
         aiAttemptTargets: targets,
         fileMeta: targetPlan.fileMeta,
       });
-      const resJson = res as { ai_attempt_updates?: unknown; ai_attempt_resolution_table?: unknown[] };
+      const resJson = res as { ai_attempt_updates?: unknown; ai_attempt_resolution_table?: { item?: string; issue_identified?: string; ai_attempt_conduct?: string; result?: string; status?: string }[] };
       const updates = resJson?.ai_attempt_updates;
       const merged = mergeAiAttemptUpdates(mergedSoFar, updates ?? null);
+      const AI_ATTEMPT_STATUS_ALLOWED = new Set(["VERIFIED", "VARIANCE", "PASS", "FAIL", "RISK_FLAG", "MISSING_BANK_STMT", "TIER_3_ONLY", "MISSING_LEVY_REPORT", "MISSING_BREAKDOWN", "NO_SUPPORT", "AUTHORISED", "UNAUTHORISED", "NO_MINUTES_FOUND", "MINUTES_NOT_AVAILABLE", "N/A"]);
       if (Array.isArray(resJson?.ai_attempt_resolution_table) && resJson.ai_attempt_resolution_table.length > 0) {
-        merged.ai_attempt_resolution_table = resJson.ai_attempt_resolution_table;
+        merged.ai_attempt_resolution_table = resJson.ai_attempt_resolution_table.map((r) => ({
+          ...r,
+          status: (r?.status && AI_ATTEMPT_STATUS_ALLOWED.has(String(r.status).trim())) ? String(r.status).trim() : "N/A",
+        }));
       } else {
         // Fallback: build resolution table from targets so user always sees what was processed
         merged.ai_attempt_resolution_table = targets.map((t) => ({
@@ -1187,7 +1194,9 @@ const App: React.FC = () => {
 
               {/* Report or empty state */}
               <div className="mt-8 flex-1 min-h-0">
-                {activePlan.result ? (
+                {activePlan.status === "processing" ? (
+                  <ReportSkeleton />
+                ) : activePlan.result ? (
                   <AuditReport
                     data={activePlan.result}
                     files={activePlan.files}

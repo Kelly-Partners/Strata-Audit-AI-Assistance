@@ -8,12 +8,9 @@ import type { PhaseItemRule, PhaseRulesMap } from "./types";
 /** Phase 2 各 item 的规则定义 */
 export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
   levy_financial_year: {
-    whitelistDocTypes: ["AGM Minutes (signed)", "Committee Minutes", "AGM Minutes", "Committee Minutes (levy context)"],
-    requiredEvidenceTypes: ["minutes"],
     guidance:
-      "The strata plan's **financial year** (start and end dates) must be sourced ONLY from minutes (document_register where Evidence_Tier = Tier 2: AGM Minutes or Committee Minutes). " +
-      "Do not infer FY from Financial Statement, Audit Report body, or other documents. Cite document_register ID and page_ref. " +
-      "If the report header (e.g. after 'Audit Execution Report' and strata plan name) explicitly states the FY, that header context may be used only when it is clearly attributable to a minutes-backed period.",
+      "The strata plan's **financial year** (start and end dates) must be sourced from **Step 0 intake_summary.financial_year** (LOCKED). " +
+      "Do NOT re-determine FY in Phase 2. If intake_summary.financial_year is empty or boundary_defined = true, mark as Not Resolved – Boundary Defined.",
   },
   levy_old_new_rate: {
     whitelistDocTypes: ["AGM Minutes (signed)", "Committee Minutes", "AGM Minutes", "Committee Minutes (levy context)"],
@@ -28,13 +25,19 @@ export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
     requiredEvidenceTypes: ["minutes"],
     guidance:
       "**Old Rate Levies** and **New Rate Levies** (master_table: Old_Levy_Admin, Old_Levy_Sink, Old_Levy_Total, New_Levy_Admin, New_Levy_Sink, New_Levy_Total): the **source** for these six fields must be ONLY minutes (document_register where Evidence_Tier = Tier 2: AGM Minutes or Committee Minutes). " +
-      "Either the amount is extracted directly from minutes, or it is calculated by quarterly proportion using FY and rate adoption date from minutes (see levy_financial_year and levy_old_new_rate). " +
+      "Either the amount is extracted directly from minutes, or it is calculated by quarterly proportion using FY from intake_summary.financial_year (LOCKED) and rate adoption date from minutes (see levy_financial_year and levy_old_new_rate). " +
       "In all cases, source_doc_id and page_ref must cite minutes; do not cite Financial Statement, Levy Register, or other documents as the source for Old Rate Levies or New Rate Levies.",
   },
   levy_subtotal_b: {
     guidance:
-      "**(B) SUB-TOTAL (NET)** – use explicit formulas only (do not sum 'all lines above'): Sub_Admin_Net = Sub_Levies_Standard_Admin + Spec_Levy_Admin + Plus_Interest_Chgd - Less_Discount_Given ONLY; Sub_Sink_Net = Sub_Levies_Standard_Sink + Spec_Levy_Sink ONLY; Total_Levies_Net = Sub_Admin_Net + Sub_Sink_Net. " +
+      "**(B) SUB-TOTAL (NET)** – use explicit formulas only (do not sum 'all lines above'): Sub_Admin_Net = Sub_Levies_Standard_Admin + Spec_Levy_Admin + Plus_Interest_Chgd_Admin - Less_Discount_Given_Admin ONLY; Sub_Sink_Net = Sub_Levies_Standard_Sink + Spec_Levy_Sink + Plus_Interest_Chgd_Sink - Less_Discount_Given_Sink ONLY; Total_Levies_Net = Sub_Admin_Net + Sub_Sink_Net. " +
       "Do not add Plus_Legal_Recovery or Plus_Other_Recovery into (B). **Do not extract** Plus_Legal_Recovery or Plus_Other_Recovery from evidence; output amount 0 and note N/A for both. For (A), (B1), (C), (D), (E), (=), Levy_Variance use the formulas in MODULE 50_OUTPUTS.",
+  },
+  levy_interest_discount: {
+    whitelistDocTypes: ["Cash Management Report", "Levy Position Report", "Levy Receipts Report", "Levy Arrears Report", "Levy Summary Report"],
+    requiredEvidenceTypes: ["levy_report"],
+    guidance:
+      "**Plus_Interest_Chgd_Admin, Plus_Interest_Chgd_Sink, Plus_Interest_Chgd_Total** and **Less_Discount_Given_Admin, Less_Discount_Given_Sink, Less_Discount_Given_Total** must be sourced from Tier 2 Levy Position Report, Levy Receipts Report, Cash Management Report, or Levy Arrears Report. If evidence shows split by fund (Admin vs Capital), extract each directly. If only a single total is shown, allocate proportionally using Sub_Levies_Standard_Admin/Sink ratios. Cite source_doc_id and page_ref for each TraceableValue.",
   },
 };
 
@@ -135,11 +138,11 @@ RULE SET (ENFORCE): GST is applied only to (B1) STANDARD LEVIES. Administrative 
 - If registered_for_gst is false, undefined, or absent → treat as NOT registered for GST.
 
 **GST Application Rule:**
-- If NOT registered for GST → No GST component on standard levies. GST_Admin = 0, GST_Sink = 0, GST_Special = 0.
-- If registered for GST → GST_Admin = 10% × Sub_Levies_Standard_Admin; GST_Sink = 10% × Sub_Levies_Standard_Sink; GST_Special = 0 (no GST on special levies). Total_GST_Raised = GST_Admin + GST_Sink + GST_Special.
+- If NOT registered for GST → GST_Admin = 0, GST_Sink = 0, GST_Special_Admin = 0, GST_Special_Sink = 0, GST_Special = 0.
+- If registered for GST → GST_Admin = 10% × Sub_Levies_Standard_Admin; GST_Sink = 10% × Sub_Levies_Standard_Sink; GST_Special_Admin = 10% × Spec_Levy_Admin; GST_Special_Sink = 10% × Spec_Levy_Sink; GST_Special = GST_Special_Admin + GST_Special_Sink. Total_GST_Raised = GST_Admin + GST_Sink + GST_Special.
 
-**Calculation Constraint – GST only on (B1) STANDARD LEVIES:**
-GST must NOT be applied to: Opening balances, Levies in arrears, Levies paid in advance, Special levies, Interest, Recoveries, or Adjustments.
+**Calculation Constraint – GST on STANDARD and SPECIAL LEVIES (per AU strata/ATO):**
+GST applies to (B1) Standard Levies and Special Levies. GST must NOT be applied to: Opening balances, Levies in arrears, Levies paid in advance, Interest, Recoveries, or Adjustments.
 `;
 
 /** 将 Phase 2 的 item 规则格式化为注入 system prompt 的文本 */

@@ -90,7 +90,7 @@ You must return a JSON object with TWO keys:
 - issue_identified: what was wrong before (from Phase output or user triage note)
 - ai_attempt_conduct: what you checked / did during this AI Attempt
 - result: human-readable outcome
-- status: final status for merge (use existing status values)
+- status: MUST be exactly one of these (no other values): VERIFIED, VARIANCE, PASS, FAIL, RISK_FLAG, MISSING_BANK_STMT, TIER_3_ONLY, MISSING_LEVY_REPORT, MISSING_BREAKDOWN, NO_SUPPORT, AUTHORISED, UNAUTHORISED, NO_MINUTES_FOUND, MINUTES_NOT_AVAILABLE, N/A
 `;
 
 export function buildAiAttemptPrompt(targets: { phase: string; itemId: string; description: string; source?: string }[]): string {

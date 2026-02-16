@@ -7,7 +7,7 @@ export { buildLevyPrompt, buildPhase4Prompt, buildExpensesPrompt, buildPhase5Pro
 
 import { HIERARCHY_INTRO, HIERARCHY_AFTER_EVIDENCE } from "./kernel/00_constitution";
 import { EVIDENCE_RULES_PROMPT } from "./kernel/20_evidence_rules";
-import { STEP_0_INTAKE_PROMPT } from "./workflow/step_0_intake";
+import { STEP_0_INTAKE_PROMPT, DOCUMENT_TYPES } from "./workflow/step_0_intake";
 import { PHASE_1_RULES_PROMPT, PHASE_2_RULES_PROMPT, PHASE_4_RULES_PROMPT } from "./rules";
 import { PHASE_1_VERIFY_PROMPT } from "./workflow/phase_1_verify";
 import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
@@ -24,6 +24,7 @@ You MUST return a single JSON object with these top-level keys:
 - intake_summary: Object with strata_plan, financial_year, total_files, missing_critical_types, status
 - core_data_positions: Object locking document/page locations (see schema)
 - bs_extract: Full Balance Sheet export { prior_year_label, current_year_label, rows } – MANDATORY single source of truth for Phase 2/4/5
+- pl_extract: Full Income & Expenditure (P&L) export { prior_year_label, current_year_label, rows } – LOCKED for Phase 3/6 (same year mapping as bs_extract)
 
 Do NOT include levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance, or completion_outputs.
 
@@ -34,7 +35,7 @@ JSON SCHEMA (Step 0 only):
       "Document_ID": "String (e.g. Sys_001)",
       "Document_Origin_Name": "String (Exact filename from manifest)",
       "Document_Name": "String (Standardized Name)",
-      "Document_Type": "String (AGM Minutes | Committee Minutes | General Ledger | Financial Statement | Bank Statement | Cash Management Report | Tax Invoice | Invoice | Levy Position Report | Insurance Policy | Valuation Report | Creditors Report | Other)",
+      "Document_Type": "String (${DOCUMENT_TYPES.join(" | ")})",
       "Page_Range": "String (e.g. 'Pages 1-5' or 'All')",
       "Evidence_Tier": "String (Tier 1/Tier 2/Tier 3)",
       "Relevant_Phases": ["String"],
@@ -47,12 +48,15 @@ JSON SCHEMA (Step 0 only):
     "status": "String",
     "strata_plan": "String (e.g. SP 12345)",
     "financial_year": "String (e.g. 01/07/2024 - 30/06/2025 or DD/MM/YYYY)",
+    "manager_limit": "Number (optional – from Agency Agreement / Minutes)",
+    "agm_limit": "Number (optional – from AGM Minutes)",
     "boundary_defined": "Boolean (optional – true when FY or BS mapping ambiguous)",
     "bs_extract_warning": "String (optional – e.g. 'balance_check_failed')",
     "registered_for_gst": "Boolean (optional – true if BS contains GST account(s); false otherwise)"
   },
   "core_data_positions": {
     "balance_sheet": { "doc_id": "String", "page_range": "String" } | null,
+    "income_and_expenditure": { "doc_id": "String", "page_range": "String" } | null,
     "bank_statement": { "doc_id": "String", "page_range": "String", "as_at_date": "String" } | null,
     "levy_report": { "doc_id": "String", "page_range": "String" } | null,
     "levy_receipts_admin": { "doc_id": "String", "page_range": "String" } | null,
@@ -66,6 +70,13 @@ JSON SCHEMA (Step 0 only):
     "current_year_label": "String (e.g. 2024)",
     "rows": [
       { "line_item": "String", "section": "OWNERS_EQUITY|ASSETS|LIABILITIES", "fund": "Admin|Capital|N/A", "prior_year": Number, "current_year": Number }
+    ]
+  },
+  "pl_extract": {
+    "prior_year_label": "String (same as bs_extract)",
+    "current_year_label": "String (same as bs_extract)",
+    "rows": [
+      { "line_item": "String", "section": "INCOME|EXPENDITURE|SURPLUS_DEFICIT", "fund": "Admin|Capital|N/A", "prior_year": Number, "current_year": Number }
     ]
   }
 }

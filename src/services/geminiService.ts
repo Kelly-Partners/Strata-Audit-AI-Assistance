@@ -3,6 +3,10 @@ import { buildSystemPrompt } from "../audit_engine";
 import { getAuditResponseJsonSchema } from "../audit_outputs/json_schema";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
 
+/**
+ * @deprecated Unused – main flow uses callExecuteFullReview (Firebase). Rules differ (no Call2/LOCKED).
+ * Kept for reference only. Do not use.
+ */
 export const analyzeAuditFiles = async (
   apiKey: string,
   files: File[],

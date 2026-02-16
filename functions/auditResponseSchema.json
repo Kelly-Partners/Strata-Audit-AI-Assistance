@@ -61,12 +61,135 @@
         },
         "status": {
           "type": "string"
+        },
+        "strata_plan": {
+          "type": "string"
+        },
+        "financial_year": {
+          "type": "string"
+        },
+        "manager_limit": {
+          "type": "number"
+        },
+        "agm_limit": {
+          "type": "number"
+        },
+        "boundary_defined": {
+          "type": "boolean"
+        },
+        "bs_extract_warning": {
+          "type": "string"
+        },
+        "registered_for_gst": {
+          "type": "boolean"
         }
       },
       "required": [
         "total_files",
         "missing_critical_types",
         "status"
+      ],
+      "additionalProperties": false
+    },
+    "bs_extract": {
+      "type": "object",
+      "properties": {
+        "prior_year_label": {
+          "type": "string"
+        },
+        "current_year_label": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "section": {
+                "type": "string",
+                "enum": [
+                  "OWNERS_EQUITY",
+                  "ASSETS",
+                  "LIABILITIES"
+                ]
+              },
+              "fund": {
+                "type": "string"
+              },
+              "prior_year": {
+                "type": "number"
+              },
+              "current_year": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "line_item",
+              "prior_year",
+              "current_year"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "prior_year_label",
+        "current_year_label",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "pl_extract": {
+      "type": "object",
+      "properties": {
+        "prior_year_label": {
+          "type": "string"
+        },
+        "current_year_label": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "section": {
+                "type": "string",
+                "enum": [
+                  "INCOME",
+                  "EXPENDITURE",
+                  "SURPLUS_DEFICIT"
+                ]
+              },
+              "fund": {
+                "type": "string"
+              },
+              "prior_year": {
+                "type": "number"
+              },
+              "current_year": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "line_item",
+              "prior_year",
+              "current_year"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "prior_year_label",
+        "current_year_label",
+        "rows"
       ],
       "additionalProperties": false
     },
@@ -502,6 +625,90 @@
               ],
               "additionalProperties": false
             },
+            "Sub_Levies_Standard_Admin": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Sub_Levies_Standard_Sink": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
             "Spec_Levy_Admin": {
               "type": "object",
               "properties": {
@@ -587,6 +794,258 @@
               "additionalProperties": false
             },
             "Spec_Levy_Total": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Plus_Interest_Chgd_Admin": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Plus_Interest_Chgd_Sink": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Plus_Interest_Chgd_Total": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Less_Discount_Given_Admin": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Less_Discount_Given_Sink": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Less_Discount_Given_Total": {
               "type": "object",
               "properties": {
                 "amount": {
@@ -1006,6 +1465,90 @@
               ],
               "additionalProperties": false
             },
+            "GST_Special_Admin": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "GST_Special_Sink": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
             "GST_Special": {
               "type": "object",
               "properties": {
@@ -1091,6 +1634,90 @@
               "additionalProperties": false
             },
             "Total_Gross_Inc": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Admin_Fund_Receipts": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number"
+                },
+                "source_doc_id": {
+                  "type": "string"
+                },
+                "page_ref": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "verbatim_quote": {
+                  "type": "string"
+                },
+                "computation": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "expression"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "amount",
+                "source_doc_id",
+                "page_ref"
+              ],
+              "additionalProperties": false
+            },
+            "Capital_Fund_Receipts": {
               "type": "object",
               "properties": {
                 "amount": {
@@ -1485,8 +2112,6 @@
             "Spec_Levy_Admin",
             "Spec_Levy_Sink",
             "Spec_Levy_Total",
-            "Plus_Interest_Chgd",
-            "Less_Discount_Given",
             "Plus_Legal_Recovery",
             "Plus_Other_Recovery",
             "Sub_Admin_Net",
@@ -1494,11 +2119,11 @@
             "Total_Levies_Net",
             "GST_Admin",
             "GST_Sink",
-            "GST_Special",
             "Total_GST_Raised",
             "Total_Gross_Inc",
+            "Admin_Fund_Receipts",
+            "Capital_Fund_Receipts",
             "Total_Receipts_Global",
-            "Non_Levy_Income",
             "Effective_Levy_Receipts",
             "Calc_Closing",
             "CurrentYear_Arrears",
@@ -1592,458 +2217,78 @@
     "assets_and_cash": {
       "type": "object",
       "properties": {
-        "bank_reconciliation": {
-          "type": "object",
-          "properties": {
-            "Source_Doc_ID": {
-              "type": "string"
-            },
-            "Bank_Stmt_Balance": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "Bank_Stmt_Date": {
-              "type": "string"
-            },
-            "Outstanding_Deposits": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "Unpresented_Cheques": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "Adjusted_Bank_Bal": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "GL_Bank_Balance": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "Bank_Rec_Variance": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "required": [
-            "Source_Doc_ID",
-            "Bank_Stmt_Balance",
-            "Bank_Stmt_Date",
-            "Outstanding_Deposits",
-            "Unpresented_Cheques",
-            "Adjusted_Bank_Bal",
-            "GL_Bank_Balance",
-            "Bank_Rec_Variance"
-          ],
-          "additionalProperties": false
-        },
-        "fund_integrity": {
-          "type": "object",
-          "properties": {
-            "Source_Doc_ID": {
-              "type": "string"
-            },
-            "Admin_Fund_Bal": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "Admin_Solvency_Status": {
-              "type": "string"
-            },
-            "Admin_Action": {
-              "type": "string"
-            },
-            "Cap_Works_Bal": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "Cap_Integrity_Status": {
-              "type": "string"
-            },
-            "Cap_Action": {
-              "type": "string"
-            },
-            "TFN_Check_Source_ID": {
-              "type": "string"
-            },
-            "TFN_Tax_Amt": {
-              "type": "object",
-              "properties": {
-                "amount": {
-                  "type": "number"
-                },
-                "source_doc_id": {
-                  "type": "string"
-                },
-                "page_ref": {
-                  "type": "string"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "verbatim_quote": {
-                  "type": "string"
-                },
-                "computation": {
-                  "type": "object",
-                  "properties": {
-                    "method": {
-                      "type": "string"
-                    },
-                    "expression": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "method",
-                    "expression"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "amount",
-                "source_doc_id",
-                "page_ref"
-              ],
-              "additionalProperties": false
-            },
-            "TFN_Status": {
-              "type": "string"
-            },
-            "TFN_Action": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "Source_Doc_ID",
-            "Admin_Fund_Bal",
-            "Admin_Solvency_Status",
-            "Admin_Action",
-            "Cap_Works_Bal",
-            "Cap_Integrity_Status",
-            "Cap_Action",
-            "TFN_Check_Source_ID",
-            "TFN_Tax_Amt",
-            "TFN_Status",
-            "TFN_Action"
-          ],
-          "additionalProperties": false
-        },
-        "investments": {
+        "balance_sheet_verification": {
           "type": "array",
-          "items": {}
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "section": {
+                "type": "string",
+                "enum": [
+                  "OWNERS_EQUITY",
+                  "ASSETS",
+                  "LIABILITIES"
+                ]
+              },
+              "fund": {
+                "type": "string"
+              },
+              "bs_amount": {
+                "type": "number"
+              },
+              "year_column": {
+                "type": "string"
+              },
+              "supporting_amount": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidence_ref": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "VERIFIED",
+                  "VARIANCE",
+                  "MISSING_BANK_STMT",
+                  "TIER_3_ONLY",
+                  "MISSING_LEVY_REPORT",
+                  "MISSING_BREAKDOWN",
+                  "NO_SUPPORT",
+                  "GL_SUPPORTED_ONLY",
+                  "SUBTOTAL_CHECK_ONLY"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "supporting_note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "line_item",
+              "bs_amount",
+              "year_column",
+              "evidence_ref",
+              "status"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
-        "bank_reconciliation",
-        "fund_integrity",
-        "investments"
+        "balance_sheet_verification"
       ],
       "additionalProperties": false
     },
@@ -2052,6 +2297,9 @@
       "items": {
         "type": "object",
         "properties": {
+          "GL_ID": {
+            "type": "string"
+          },
           "GL_Date": {
             "type": "string"
           },
@@ -2099,6 +2347,245 @@
               "page_ref"
             ],
             "additionalProperties": false
+          },
+          "Risk_Profile": {
+            "type": "object",
+            "properties": {
+              "is_material": {
+                "type": "boolean"
+              },
+              "risk_keywords": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "is_split_invoice": {
+                "type": "boolean"
+              },
+              "selection_reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "is_material",
+              "risk_keywords",
+              "is_split_invoice",
+              "selection_reason"
+            ],
+            "additionalProperties": false
+          },
+          "Three_Way_Match": {
+            "type": "object",
+            "properties": {
+              "invoice": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "payee_match": {
+                    "type": "boolean"
+                  },
+                  "abn_valid": {
+                    "type": "boolean"
+                  },
+                  "addressed_to_strata": {
+                    "type": "boolean"
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "properties": {
+                      "source_doc_id": {
+                        "type": "string"
+                      },
+                      "page_ref": {
+                        "type": "string"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "extracted_amount": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "payee_match",
+                  "abn_valid",
+                  "addressed_to_strata"
+                ],
+                "additionalProperties": false
+              },
+              "payment": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "PAID",
+                      "ACCRUED",
+                      "MISSING",
+                      "BANK_STMT_MISSING"
+                    ]
+                  },
+                  "bank_date": {
+                    "type": "string"
+                  },
+                  "amount_match": {
+                    "type": "boolean"
+                  },
+                  "source_doc": {
+                    "type": "string"
+                  },
+                  "creditors_ref": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "properties": {
+                      "source_doc_id": {
+                        "type": "string"
+                      },
+                      "page_ref": {
+                        "type": "string"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "extracted_amount": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "status",
+                  "amount_match"
+                ],
+                "additionalProperties": false
+              },
+              "authority": {
+                "type": "object",
+                "properties": {
+                  "required_tier": {
+                    "type": "string",
+                    "enum": [
+                      "MANAGER",
+                      "COMMITTEE",
+                      "GENERAL_MEETING"
+                    ]
+                  },
+                  "limit_applied": {
+                    "type": "number"
+                  },
+                  "minute_ref": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "AUTHORISED",
+                      "UNAUTHORISED",
+                      "NO_MINUTES_FOUND",
+                      "MINUTES_NOT_AVAILABLE"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "properties": {
+                      "source_doc_id": {
+                        "type": "string"
+                      },
+                      "page_ref": {
+                        "type": "string"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "extracted_amount": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "required_tier",
+                  "limit_applied",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "invoice",
+              "payment",
+              "authority"
+            ],
+            "additionalProperties": false
+          },
+          "Fund_Integrity": {
+            "type": "object",
+            "properties": {
+              "gl_fund_code": {
+                "type": "string"
+              },
+              "invoice_nature": {
+                "type": "string"
+              },
+              "classification_status": {
+                "type": "string",
+                "enum": [
+                  "CORRECT",
+                  "MISCLASSIFIED",
+                  "UNCERTAIN"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "object",
+                "properties": {
+                  "source_doc_id": {
+                    "type": "string"
+                  },
+                  "page_ref": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "extracted_amount": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "gl_fund_code",
+              "invoice_nature",
+              "classification_status"
+            ],
+            "additionalProperties": false
+          },
+          "Overall_Status": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "FAIL",
+              "RISK_FLAG"
+            ]
           },
           "GL_Fund_Code": {
             "type": "string"
@@ -2170,16 +2657,7 @@
         "required": [
           "GL_Date",
           "GL_Payee",
-          "GL_Amount",
-          "GL_Fund_Code",
-          "Source_Docs",
-          "Doc_Status",
-          "Invoice_Status",
-          "Inv_Desc",
-          "Class_Result",
-          "Manager_Limit",
-          "Minute_Ref",
-          "Auth_Result"
+          "GL_Amount"
         ],
         "additionalProperties": false
       }

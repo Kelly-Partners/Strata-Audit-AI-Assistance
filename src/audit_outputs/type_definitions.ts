@@ -50,6 +50,7 @@ export interface MinutesRef {
 /** Step 0: Core data positions – lock document/page locations for Phase 2/4/3 */
 export interface CoreDataPositions {
   balance_sheet?: DocLocation | null;
+  income_and_expenditure?: DocLocation | null;
   bank_statement?: DocLocation | null;
   levy_report?: DocLocation | null;
   levy_receipts_admin?: DocLocation | null;
@@ -87,6 +88,22 @@ export interface BsExtract {
   rows: BsExtractRow[];
 }
 
+/** Step 0: Income & Expenditure (P&L) line item – same structure as bs_extract rows */
+export interface PlExtractRow {
+  line_item: string;
+  section?: "INCOME" | "EXPENDITURE" | "SURPLUS_DEFICIT";
+  fund?: string;
+  prior_year: number;
+  current_year: number;
+}
+
+/** Step 0: Full Income & Expenditure extract – LOCKED single source for Phase 3/6 P&L-derived data */
+export interface PlExtract {
+  prior_year_label: string;
+  current_year_label: string;
+  rows: PlExtractRow[];
+}
+
 export interface TraceableValue {
   amount: number;
   source_doc_id: string;
@@ -117,8 +134,16 @@ export interface LevyRecMaster {
   Spec_Levy_Admin: TraceableValue;
   Spec_Levy_Sink: TraceableValue;
   Spec_Levy_Total: TraceableValue;
-  Plus_Interest_Chgd: TraceableValue;
-  Less_Discount_Given: TraceableValue;
+  Plus_Interest_Chgd_Admin?: TraceableValue;
+  Plus_Interest_Chgd_Sink?: TraceableValue;
+  Plus_Interest_Chgd_Total?: TraceableValue;
+  Less_Discount_Given_Admin?: TraceableValue;
+  Less_Discount_Given_Sink?: TraceableValue;
+  Less_Discount_Given_Total?: TraceableValue;
+  /** @deprecated – use Plus_Interest_Chgd_Admin/Sink/Total; kept for backward compat */
+  Plus_Interest_Chgd?: TraceableValue;
+  /** @deprecated – use Less_Discount_Given_Admin/Sink/Total; kept for backward compat */
+  Less_Discount_Given?: TraceableValue;
   Plus_Legal_Recovery: TraceableValue;
   Plus_Other_Recovery: TraceableValue;
   Sub_Admin_Net: TraceableValue;
@@ -126,7 +151,9 @@ export interface LevyRecMaster {
   Total_Levies_Net: TraceableValue;
   GST_Admin: TraceableValue;
   GST_Sink: TraceableValue;
-  GST_Special: TraceableValue;
+  GST_Special_Admin?: TraceableValue;
+  GST_Special_Sink?: TraceableValue;
+  GST_Special?: TraceableValue;
   Total_GST_Raised: TraceableValue;
   Total_Gross_Inc: TraceableValue;
   /** Administrative Fund receipts for the audit FY (Admin & Capital Actual Payments method) */
@@ -345,6 +372,8 @@ export interface AuditResponse {
   bs_structure?: BsStructureItem[] | null;
   /** Step 0: Full BS extract – single source of truth for Phase 2/4/5. Use prior_year/current_year from rows. */
   bs_extract?: BsExtract | null;
+  /** Step 0: Full Income & Expenditure (P&L) extract – LOCKED for Phase 3/6. Same year mapping as bs_extract. */
+  pl_extract?: PlExtract | null;
   levy_reconciliation?: LevyReconciliation;
   assets_and_cash?: AssetsAndCash;
   expense_samples?: ExpenseSample[];

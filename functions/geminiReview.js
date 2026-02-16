@@ -110,10 +110,11 @@ ${fileManifest}
 INSTRUCTIONS:
 1. Execute Step 0 ONLY. Create the Document Dictionary. You MUST map "File Part 1" to the first name in the list above, "File Part 2" to the second, etc.
 2. The "Document_Origin_Name" in the JSON MUST match the filename exactly.
-3. Do NOT execute Phases 1–6. Return document_register, intake_summary, core_data_positions, and bs_extract. Do NOT include levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance, or completion_outputs.
+3. Do NOT execute Phases 1–6. Return document_register, intake_summary, core_data_positions, bs_extract, and pl_extract. Do NOT include levy_reconciliation, assets_and_cash, expense_samples, statutory_compliance, or completion_outputs.
 4. Extract strata_plan and financial_year from minutes/financials into intake_summary.
-5. Populate core_data_positions with doc_id and page_range for each evidence type (balance_sheet, bank_statement, levy_report, etc.). Use null if not found.
+5. Populate core_data_positions with doc_id and page_range for each evidence type (balance_sheet, income_and_expenditure, bank_statement, levy_report, etc.). Use null if not found.
 6. Populate bs_extract: export the full Balance Sheet including Prior Year and Current Year columns. For each row: line_item, section, fund, prior_year, current_year. Use prior_year_label and current_year_label. This is the single source of truth for Phase 2 and Phase 4.
+7. Populate pl_extract: export the full Income & Expenditure (P&L) using core_data_positions.income_and_expenditure. Same year mapping as bs_extract. For each row: line_item, section (INCOME|EXPENDITURE|SURPLUS_DEFICIT), fund, prior_year, current_year. If P&L not found, output pl_extract with rows: [].
 ` :
       `
 ATTACHED FILE MAPPING (Strictly map the binary parts to these names):

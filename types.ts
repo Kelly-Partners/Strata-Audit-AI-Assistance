@@ -11,6 +11,8 @@ export type {
   BsStructureItem,
   BsExtract,
   BsExtractRow,
+  PlExtract,
+  PlExtractRow,
   TraceableValue,
   LevyRecMaster,
   HighRiskDebtor,

@@ -64,8 +64,16 @@ export const LevyRecMasterSchema = z.object({
   Spec_Levy_Admin: TraceableValueSchema,
   Spec_Levy_Sink: TraceableValueSchema,
   Spec_Levy_Total: TraceableValueSchema,
-  Plus_Interest_Chgd: TraceableValueSchema,
-  Less_Discount_Given: TraceableValueSchema,
+  Plus_Interest_Chgd_Admin: TraceableValueSchema.optional(),
+  Plus_Interest_Chgd_Sink: TraceableValueSchema.optional(),
+  Plus_Interest_Chgd_Total: TraceableValueSchema.optional(),
+  Less_Discount_Given_Admin: TraceableValueSchema.optional(),
+  Less_Discount_Given_Sink: TraceableValueSchema.optional(),
+  Less_Discount_Given_Total: TraceableValueSchema.optional(),
+  /** @deprecated – use Plus_Interest_Chgd_Admin/Sink/Total; kept for backward compat */
+  Plus_Interest_Chgd: TraceableValueSchema.optional(),
+  /** @deprecated – use Less_Discount_Given_Admin/Sink/Total; kept for backward compat */
+  Less_Discount_Given: TraceableValueSchema.optional(),
   Plus_Legal_Recovery: TraceableValueSchema,
   Plus_Other_Recovery: TraceableValueSchema,
   Sub_Admin_Net: TraceableValueSchema,
@@ -73,7 +81,9 @@ export const LevyRecMasterSchema = z.object({
   Total_Levies_Net: TraceableValueSchema,
   GST_Admin: TraceableValueSchema,
   GST_Sink: TraceableValueSchema,
-  GST_Special: TraceableValueSchema,
+  GST_Special_Admin: TraceableValueSchema.optional(),
+  GST_Special_Sink: TraceableValueSchema.optional(),
+  GST_Special: TraceableValueSchema.optional(),
   Total_GST_Raised: TraceableValueSchema,
   Total_Gross_Inc: TraceableValueSchema,
   Admin_Fund_Receipts: TraceableValueSchema,
@@ -200,6 +210,21 @@ const BsExtractSchema = z.object({
   rows: z.array(BsExtractRowSchema),
 });
 
+/** Step 0: Income & Expenditure (P&L) extract – same structure as bs_extract */
+const PlExtractRowSchema = z.object({
+  line_item: z.string(),
+  section: z.enum(["INCOME", "EXPENDITURE", "SURPLUS_DEFICIT"]).optional(),
+  fund: z.string().optional(),
+  prior_year: z.number(),
+  current_year: z.number(),
+});
+
+const PlExtractSchema = z.object({
+  prior_year_label: z.string(),
+  current_year_label: z.string(),
+  rows: z.array(PlExtractRowSchema),
+});
+
 /** Phase 4: bs_amount = from LOCKED bs_extract (current_year for most; prior_year for RULE 1 only); supporting_amount = from R2–R5 evidence only. */
 const BalanceSheetVerificationItemSchema = z.object({
   line_item: z.string(),
@@ -292,6 +317,7 @@ export const AuditResponseSchema = z.object({
   document_register: z.array(DocumentEntrySchema),
   intake_summary: IntakeSummarySchema,
   bs_extract: BsExtractSchema.optional(),
+  pl_extract: PlExtractSchema.optional(),
   levy_reconciliation: LevyRecSchema.optional(),
   assets_and_cash: z
     .object({

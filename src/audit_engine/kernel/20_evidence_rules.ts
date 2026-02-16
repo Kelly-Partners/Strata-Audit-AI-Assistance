@@ -2,7 +2,23 @@
  * 20_EVIDENCE (Evidence Gatekeeper). SUPREME PROTOCOL – Same authority as 00_CONSTITUTION.
  * Strict adherence to Tier 1/2/3. No inventing or hallucinating evidence.
  * Phases 2/3/4/5 and AI Attempt MUST follow these rules.
+ *
+ * DOCUMENT_TYPE → TIER mapping is generated from DOCUMENT_TYPES_WITH_TIER (step_0_intake).
  */
+
+import { DOCUMENT_TYPES_WITH_TIER } from "../workflow/step_0_intake";
+
+function buildDocumentTypeTierMapping(): string {
+  const byTier = { "Tier 1": [] as string[], "Tier 2": [] as string[], "Tier 3": [] as string[] };
+  for (const { type, tier } of DOCUMENT_TYPES_WITH_TIER) {
+    byTier[tier].push(type);
+  }
+  return ["Tier 1", "Tier 2", "Tier 3"]
+    .map((tier) => byTier[tier as keyof typeof byTier].map((t) => `${t} → ${tier}`).join("\n"))
+    .join("\n\n");
+}
+
+const DOCUMENT_TYPE_TIER_MAPPING = buildDocumentTypeTierMapping();
 
 export const EVIDENCE_RULES_PROMPT = `
 20_EVIDENCE (Evidence Gatekeeper) – SUPREME PROTOCOL
@@ -42,24 +58,10 @@ TIER DEFINITIONS (MANDATORY)
 - Other
 
 ========================
-DOCUMENT_TYPE → TIER MAPPING (MANDATORY – Step 0 MUST use this)
+DOCUMENT_TYPE → TIER MAPPING (MANDATORY — Step 0 MUST use this)
 ========================
 
-Bank Statement → Tier 1
-Tax Invoice → Tier 1
-Insurance Policy → Tier 1
-Valuation Report → Tier 1
-
-AGM Minutes → Tier 2
-Committee Minutes → Tier 2
-Cash Management Report → Tier 2
-Levy Position Report → Tier 2
-Invoice → Tier 2
-Creditors Report → Tier 2
-
-General Ledger → Tier 3
-Financial Statement → Tier 3
-Other → Tier 3
+${DOCUMENT_TYPE_TIER_MAPPING}
 
 If a file matches multiple Document_Types, use the mapping for the primary type. If ambiguous, prefer the lower tier (Tier 3 over Tier 2, Tier 2 over Tier 1) unless the file is clearly from an external party (bank, insurer, valuer, ATO).
 
@@ -70,10 +72,10 @@ BLACKLIST (Phase 3/4/5 Supporting Source – PROHIBITED)
 The following MUST NOT be used as Supporting Source when Tier 1 or Tier 2 is required:
 - Financial Statement (as supporting evidence for BS line items – bs_amount comes from bs_extract only)
 - Notes to the Financial Statement
-- General Ledger (when Tier 1 required, e.g. Cash at Bank – use Bank Statement only; Phase 5 Insurance – use Insurance Policy/Valuation only)
+- General Ledger (when Tier 1 required, e.g. Cash at Bank – use Bank Statement only; Phase 5 Insurance – use Insurance Policy/Insurance Valuation Report only)
 - Phase 3: Invoice = Tier 1; Payment PAID = Tier 1; ACCRUED = Tier 2; Authority = Tier 2. FS/Notes/GL when Tier 1/2 required → PROHIBITED.
 - Phase 4: R2 = Tier 1; R3/4 = Tier 2. FS/Notes/GL when Tier 1/2 required → PROHIBITED.
-- Phase 5 Insurance: Tier 1 ONLY. Management summaries, GL, Notes → PROHIBITED.
+- Phase 5 Insurance: Tier 1 ONLY (Insurance Policy, Insurance Valuation Report, Certificate of Currency). Management summaries, GL, Notes → PROHIBITED.
 
 ========================
 TIER 3 PERMITTED USE

@@ -15,9 +15,12 @@ import {
   BsStructureItem,
   BsExtract,
   BsExtractRow,
+  PlExtract,
+  PlExtractRow,
   ExpenseSample,
 } from '../types';
 import { buildAiAttemptTargets, AREA_DISPLAY, AREA_ORDER } from '../src/audit_engine/ai_attempt_targets';
+import { DOCUMENT_TYPES_WITH_TIER } from '../src/audit_engine/workflow/step_0_intake';
 
 /** Extract 1-based page number from various ref formats: "Page 3", "p.3", "pg 3", "3" */
 function extractPageNumber(s: string): string | null {
@@ -61,27 +64,18 @@ const ForensicCell: React.FC<{
   const cardRef = useRef<HTMLDivElement>(null); // Ref for the popup card
 
   // --- RESOLUTION LOGIC FOR SOURCE DOCUMENT ---
-  // Ensure docs is an array before finding
+  // document_register is the single source of truth: source_doc_id MUST be Document_ID.
   const safeDocs = docs || [];
-
-  // 1. Try to find by strict Document_ID match in Register
-  let doc = safeDocs.find(d => d.Document_ID === val?.source_doc_id);
-  
-  // 2. Fallback: Try to find by matching Origin Name or Name in Register
-  if (!doc && val?.source_doc_id) {
-    doc = safeDocs.find(d => d.Document_Origin_Name === val.source_doc_id || d.Document_Name === val.source_doc_id);
-  }
-
-  // 3. Find the actual physical File object (use findFileByName for storage prefix compatibility)
-  const targetFile = doc
-    ? findFileByName(files, doc.Document_Origin_Name ?? '')
-    : findFileByName(files, val?.source_doc_id ?? '');
+  const doc = safeDocs.find(d => d.Document_ID === val?.source_doc_id);
+  // Only resolve file by Document_Origin_Name from register; no fallback by arbitrary source_doc_id
+  const targetFile = doc ? findFileByName(files, doc.Document_Origin_Name ?? '') : undefined;
 
   // Safe val check
   if (!val) return <span className="text-gray-300">-</span>;
 
-  // Format Value
-  const displayVal = isCurrency ? (val.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) : val.amount;
+  // Format Value: amount null/undefined = missing (show –), only real 0 shows 0.00
+  const amt = val.amount;
+  const displayVal = amt == null ? '–' : (isCurrency ? Number(amt).toLocaleString(undefined, { minimumFractionDigits: 2 }) : amt);
 
   // --- INTERACTION LOGIC: ESC & CLICK OUTSIDE ---
   useEffect(() => {
@@ -210,7 +204,9 @@ const ForensicCell: React.FC<{
                       ))}
                     </span>
                   ) : (
-                    val.source_doc_id === 'Calculated' ? 'System Calculation' : (val.source_doc_id || 'Unknown')
+                    (val.source_doc_id === 'CALCULATED' || val.source_doc_id === 'Calculated') ? 'System Calculation'
+                      : (val.source_doc_id === '-' || val.source_doc_id === 'N/A' || !val.source_doc_id) ? (val.source_doc_id || '–')
+                        : '证据未绑定'
                   )}
                 </div>
               </div>
@@ -332,33 +328,11 @@ interface ExpenseForensicPayload {
   extracted_amount?: number;
 }
 
-/** Map common abbreviations to Document_Type for expense forensic resolution */
-const DOC_TYPE_ALIASES: Record<string, string> = {
-  BS: 'Bank Statement',
-  GL: 'General Ledger',
-  CM: 'Committee Minutes',
-  AGM: 'AGM Minutes',
-  FS: 'Financial Statement',
-};
-
-/** Resolve document from source_doc_id – Document_ID, Origin_Name, Document_Type, and abbreviations */
+/** Resolve document from source_doc_id – ONLY Document_ID match (document_register is single source of truth) */
 function resolveDocForExpense(safeDocs: DocumentEntry[], sourceDocId: string): DocumentEntry | undefined {
-  if (!sourceDocId?.trim()) return undefined;
+  if (!sourceDocId?.trim() || sourceDocId === '-' || sourceDocId === 'N/A') return undefined;
   const id = sourceDocId.trim();
-  const baseId = id.split(/[,/|]/)[0]?.trim() || id;
-  let doc = safeDocs.find(d => d.Document_ID === id);
-  if (doc) return doc;
-  doc = safeDocs.find(d => d.Document_Origin_Name === id || d.Document_Name === id);
-  if (doc) return doc;
-  doc = safeDocs.find(d => d.Document_Origin_Name === baseId || d.Document_Name === baseId);
-  if (doc) return doc;
-  doc = safeDocs.find(d => d.Document_Type?.toLowerCase() === id.toLowerCase());
-  if (doc) return doc;
-  doc = safeDocs.find(d => d.Document_Type?.toLowerCase() === baseId.toLowerCase());
-  if (doc) return doc;
-  const resolvedType = DOC_TYPE_ALIASES[baseId] || DOC_TYPE_ALIASES[id] || baseId;
-  doc = safeDocs.find(d => d.Document_Type?.toLowerCase() === resolvedType.toLowerCase());
-  return doc;
+  return safeDocs.find(d => d.Document_ID === id);
 }
 
 /** Normalize for match: strip N_ prefix, collapse spaces/underscores. */
@@ -398,7 +372,7 @@ const ExpenseForensicPopover: React.FC<{
   const safeDocs = docs || [];
   const doc = resolveDocForExpense(safeDocs, payload.source_doc_id);
   const originName = doc?.Document_Origin_Name;
-  const targetFile = originName ? findFileByName(files, originName) : findFileByName(files, payload.source_doc_id);
+  const targetFile = originName ? findFileByName(files, originName) : undefined;
 
   const handleOpenPdf = () => {
     if (!targetFile) {
@@ -451,7 +425,7 @@ const ExpenseForensicPopover: React.FC<{
                       </React.Fragment>
                     ))}
                   </span>
-                ) : (payload.source_doc_id || '–')}
+                ) : (payload.source_doc_id === '-' || payload.source_doc_id === 'N/A') ? (payload.source_doc_id || '–') : '证据未绑定'}
               </div>
             </div>
             <div>
@@ -534,23 +508,23 @@ function buildExpenseForensicPayload(
     }
     case 'PAY': {
       const ev = pay?.evidence;
-      const docId = ev?.source_doc_id ?? pay?.source_doc ?? pay?.creditors_ref ?? '–';
+      const docId = ev?.source_doc_id ?? '–';
       return {
         title: 'Payment',
         source_doc_id: docId,
         page_ref: ev?.page_ref ?? '',
-        note: ev?.note ?? (pay ? `Status: ${pay.status}. ${pay.source_doc ? pay.source_doc : ''} ${pay.creditors_ref ? pay.creditors_ref : ''} ${pay.bank_date ? pay.bank_date : ''}`.trim() || '–' : '–'),
+        note: ev?.note ?? (pay ? `Status: ${pay.status}. Ref: ${pay.source_doc || pay.creditors_ref || '–'}. ${pay.bank_date ? pay.bank_date : ''}`.trim() || '–' : '–'),
         extracted_amount: ev?.extracted_amount ?? item.GL_Amount?.amount,
       };
     }
     case 'AUTH': {
       const ev = auth?.evidence;
-      const docId = ev?.source_doc_id ?? (auth?.minute_ref ? auth.minute_ref.split(/[,\s]/)[0] : '') ?? '–';
+      const docId = ev?.source_doc_id ?? '–';
       return {
         title: 'Authority',
         source_doc_id: docId,
         page_ref: ev?.page_ref ?? '',
-        note: ev?.note ?? (auth ? `Required: ${auth.required_tier}; limit applied: $${auth.limit_applied}. ${auth.minute_ref ?? 'No minute ref.'}` : '–'),
+        note: ev?.note ?? (auth ? `Required: ${auth.required_tier}; limit applied: $${auth.limit_applied}. Minute ref: ${auth.minute_ref ?? '–'}` : '–'),
         extracted_amount: ev?.extracted_amount ?? auth?.limit_applied,
       };
     }
@@ -757,7 +731,9 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 );
 
 const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ status, onClick }) => {
-  const s = (status || '').toLowerCase();
+  const raw = (status || '').trim();
+  const sanitized = raw && raw.length <= 50 && /^[\x20-\x7E]+$/.test(raw) ? raw : (raw ? 'N/A' : 'Unknown');
+  const s = sanitized.toLowerCase();
   let colorClass = 'bg-gray-100 text-gray-800 border-gray-200';
   if (s.includes('fail') || s.includes('risk') || s.includes('unauthorised') || s.includes('wrong') || s.includes('insolvent') || s.includes('deficit') || s.includes('variance')) {
     colorClass = 'bg-red-50 text-red-800 border-red-100';
@@ -774,7 +750,7 @@ const StatusBadge: React.FC<{ status: string; onClick?: () => void }> = ({ statu
       onClick={onClick}
       className={`inline-flex items-center px-2 py-1 border text-body font-bold uppercase tracking-wider ${colorClass} ${onClick ? 'cursor-pointer hover:opacity-80' : ''}`}
     >
-      {status || 'Unknown'}
+      {sanitized}
       {onClick && <span className="ml-1 text-micro opacity-50">▼</span>}
     </span>
   );
@@ -803,7 +779,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
   const safeData: Partial<AuditResponse> = data || {};
   const docs = safeData.document_register || [];
   
-  const defaultSummary = { total_files: 0, missing_critical_types: [], status: 'N/A', strata_plan: undefined as string | undefined, financial_year: undefined as string | undefined };
+  const defaultSummary = { total_files: 0, missing_critical_types: [], status: 'N/A', strata_plan: undefined as string | undefined, financial_year: undefined as string | undefined, manager_limit: undefined as number | undefined, agm_limit: undefined as number | undefined };
   const summary = { ...defaultSummary, ...(safeData.intake_summary || {}) };
 
   // Helper to attach actions (native title tooltip when content is string, e.g. Note column)
@@ -909,6 +885,14 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                   <div className="text-body text-[#004F9F] uppercase font-bold tracking-widest mb-2">Registered for GST</div>
                   <div className="text-section font-bold text-black font-mono">{summary.registered_for_gst === true ? 'Yes' : summary.registered_for_gst === false ? 'No' : '–'}</div>
                 </div>
+                <div className="p-4 bg-gray-50 border border-gray-100">
+                  <div className="text-body text-gray-500 uppercase font-bold tracking-widest mb-2">Manager Limit</div>
+                  <div className="text-section font-bold text-black font-mono">{summary.manager_limit != null ? `$${Number(summary.manager_limit).toLocaleString()}` : '–'}</div>
+                </div>
+                <div className="p-4 bg-gray-50 border border-gray-100">
+                  <div className="text-body text-gray-500 uppercase font-bold tracking-widest mb-2">AGM Limit</div>
+                  <div className="text-section font-bold text-black font-mono">{summary.agm_limit != null ? `$${Number(summary.agm_limit).toLocaleString()}` : '–'}</div>
+                </div>
                 {summary.missing_critical_types && summary.missing_critical_types.length > 0 ? (
                    <div className="p-4 bg-red-50 border border-red-100 lg:col-span-1">
                    <div className="text-body text-red-700 uppercase font-bold tracking-widest mb-2">Missing Records</div>
@@ -917,6 +901,32 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                    </div>
                  </div>
                 ) : null}
+              </div>
+
+              {/* Expected Document Types (canonical reference – from DOCUMENT_TYPES_WITH_TIER) */}
+              <div className="mb-6">
+                <div className="border-b-2 border-[#004F9F] pb-2 mb-3">
+                  <h4 className="text-body font-bold text-black uppercase tracking-wide">Expected Document Types</h4>
+                  <p className="text-caption text-gray-500 mt-1">Canonical list; ✓ = at least one file in register</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {DOCUMENT_TYPES_WITH_TIER.map(({ type, tier }) => {
+                    const hasDoc = docs.some((d) => d.Document_Type === type);
+                    return (
+                      <span
+                        key={type}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-caption font-medium ${
+                          hasDoc ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+                        }`}
+                        title={hasDoc ? `${type} (Tier ${tier.slice(-1)}) – Present` : `${type} (Tier ${tier.slice(-1)}) – Missing`}
+                      >
+                        <span className={hasDoc ? 'text-green-600' : 'text-amber-600'}>{hasDoc ? '✓' : '–'}</span>
+                        <span>{type}</span>
+                        <span className="text-gray-500 font-normal">({tier})</span>
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
               
               <div className="overflow-x-auto">
@@ -937,7 +947,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td colSpan={6} className="px-5 py-4 text-center text-gray-500 italic">No documents registered.</td>
                       </tr>
                     ) : (
-                      docs.map((doc) => (
+                      [...docs].sort((a, b) => (a.Document_Type || '').localeCompare(b.Document_Type || '') || (a.Document_ID || '').localeCompare(b.Document_ID || '')).map((doc) => (
                         <tr key={doc.Document_ID} className="bg-white hover:bg-gray-50 transition-colors group">
                           <td className="px-5 py-4 text-gray-500 text-body border-r border-gray-100">{doc.Document_ID}</td>
                           <td className="px-5 py-4 text-gray-500 italic border-r border-gray-100 break-words max-w-xs">{doc.Document_Origin_Name}</td>
@@ -973,6 +983,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {[
                       { key: 'balance_sheet', label: 'Balance Sheet' },
+                      { key: 'income_and_expenditure', label: 'Income & Expenditure' },
                       { key: 'bank_statement', label: 'Bank Statement' },
                       { key: 'levy_report', label: 'Levy Report' },
                       { key: 'levy_receipts_admin', label: 'Levy Receipts (Admin)' },
@@ -1062,10 +1073,10 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             const bsDoc = safeData.core_data_positions?.balance_sheet;
                             const currTrace: TraceableValue = bsDoc
                               ? { amount: row.current_year ?? 0, source_doc_id: bsDoc.doc_id, page_ref: `${bsDoc.page_range} › ${safeData.bs_extract?.current_year_label || 'Current'}`, note: `From bs_extract current_year (${row.line_item})` }
-                              : { amount: row.current_year ?? 0, source_doc_id: 'Balance Sheet (FS)', page_ref: safeData.bs_extract?.current_year_label || 'Current', note: `From bs_extract current_year` };
+                              : { amount: row.current_year ?? 0, source_doc_id: '-', page_ref: safeData.bs_extract?.current_year_label || 'Current', note: `From bs_extract current_year (BS not in register)` };
                             const priorTrace: TraceableValue = bsDoc
                               ? { amount: row.prior_year ?? 0, source_doc_id: bsDoc.doc_id, page_ref: `${bsDoc.page_range} › ${safeData.bs_extract?.prior_year_label || 'Prior'}`, note: `From bs_extract prior_year (${row.line_item})` }
-                              : { amount: row.prior_year ?? 0, source_doc_id: 'Balance Sheet (FS)', page_ref: safeData.bs_extract?.prior_year_label || 'Prior', note: `From bs_extract prior_year` };
+                              : { amount: row.prior_year ?? 0, source_doc_id: '-', page_ref: safeData.bs_extract?.prior_year_label || 'Prior', note: `From bs_extract prior_year (BS not in register)` };
                             return (
                               <tr key={i} className="bg-white hover:bg-gray-50">
                                 <td className="px-3 py-2 text-gray-500">{i + 1}</td>
@@ -1101,6 +1112,78 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                 ) : (
                   <div className="p-6 bg-gray-50 border border-gray-100 rounded text-center text-gray-500 text-body italic">
                     Run Step 0 to export Balance Sheet extract (single source for Phase 2 &amp; 4).
+                  </div>
+                )}
+              </div>
+
+              {/* Income & Expenditure (P&L) Extract – below BS */}
+              <div className="mt-10 pt-8 border-t border-gray-200">
+                <div className="border-b-2 border-[#004F9F] pb-3 mb-6">
+                  <h4 className="text-body font-bold text-black uppercase tracking-wide">
+                    Income &amp; Expenditure Extract
+                  </h4>
+                  <p className="text-caption text-gray-500 mt-1">
+                    Full P&amp;L export – single source for Phase 3/6 (same year mapping as BS)
+                  </p>
+                </div>
+                {safeData.pl_extract && Array.isArray(safeData.pl_extract.rows) && safeData.pl_extract.rows.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="p-3 bg-[#004F9F]/10 border border-[#004F9F]/30 rounded">
+                        <span className="text-label text-[#004F9F] uppercase font-bold">Current Year</span>
+                        <div className="text-body font-bold font-mono">{safeData.pl_extract.current_year_label || '–'}</div>
+                      </div>
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded">
+                        <span className="text-label text-gray-500 uppercase font-bold">Prior Year</span>
+                        <div className="text-body font-bold font-mono">{safeData.pl_extract.prior_year_label || '–'}</div>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left border border-gray-200">
+                        <thead className="bg-gray-100 text-black uppercase font-bold text-label tracking-wider">
+                          <tr>
+                            <th className="px-3 py-2 border-b border-gray-200">#</th>
+                            <th className="px-3 py-2 border-b border-gray-200">Line Item</th>
+                            <th className="px-3 py-2 border-b border-gray-200">Section</th>
+                            <th className="px-3 py-2 border-b border-gray-200">Fund</th>
+                            <th className="px-3 py-2 border-b border-gray-200 text-right">Current Year ($)</th>
+                            <th className="px-3 py-2 border-b border-gray-200 text-right">Prior Year ($)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 text-body">
+                          {(safeData.pl_extract.rows as PlExtractRow[]).map((row, i) => {
+                            const plDoc = safeData.core_data_positions?.income_and_expenditure;
+                            const currTrace: TraceableValue = plDoc
+                              ? { amount: row.current_year ?? 0, source_doc_id: plDoc.doc_id, page_ref: `${plDoc.page_range} › ${safeData.pl_extract?.current_year_label || 'Current'}`, note: `From pl_extract current_year (${row.line_item})` }
+                              : { amount: row.current_year ?? 0, source_doc_id: '-', page_ref: safeData.pl_extract?.current_year_label || 'Current', note: `From pl_extract current_year (P&L not in register)` };
+                            const priorTrace: TraceableValue = plDoc
+                              ? { amount: row.prior_year ?? 0, source_doc_id: plDoc.doc_id, page_ref: `${plDoc.page_range} › ${safeData.pl_extract?.prior_year_label || 'Prior'}`, note: `From pl_extract prior_year (${row.line_item})` }
+                              : { amount: row.prior_year ?? 0, source_doc_id: '-', page_ref: safeData.pl_extract?.prior_year_label || 'Prior', note: `From pl_extract prior_year (P&L not in register)` };
+                            return (
+                              <tr key={i} className="bg-white hover:bg-gray-50">
+                                <td className="px-3 py-2 text-gray-500">{i + 1}</td>
+                                <td className="px-3 py-2 font-medium text-gray-900">{row.line_item}</td>
+                                <td className="px-3 py-2">
+                                  <span className={`px-1.5 py-0.5 text-micro font-bold uppercase ${
+                                    row.section === 'INCOME' ? 'bg-green-50 text-green-800' :
+                                    row.section === 'EXPENDITURE' ? 'bg-red-50 text-red-800' :
+                                    row.section === 'SURPLUS_DEFICIT' ? 'bg-blue-50 text-blue-800' :
+                                    'bg-gray-100 text-gray-700'
+                                  }`}>{row.section || '–'}</span>
+                                </td>
+                                <td className="px-3 py-2 text-gray-600">{row.fund || 'N/A'}</td>
+                                <td className="px-3 py-2 text-right font-mono font-medium"><ForensicCell val={currTrace} docs={docs} files={files} /></td>
+                                <td className="px-3 py-2 text-right font-mono"><ForensicCell val={priorTrace} docs={docs} files={files} /></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-6 bg-gray-50 border border-gray-100 rounded text-center text-gray-500 text-body italic">
+                    Run Step 0 to export Income &amp; Expenditure extract. If no P&amp;L found, pl_extract.rows will be empty.
                   </div>
                 )}
               </div>
@@ -1226,24 +1309,38 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                            {withAction('spec_levy', 'Special Levies', data.levy_reconciliation.master_table.Spec_Levy_Total.note || '-')}
                         </td>
                     </tr>
+                    {(() => {
+                      const mt = data.levy_reconciliation.master_table;
+                      const emptyCell = { amount: 0, source_doc_id: '-', page_ref: '-', note: '—' as string };
+                      const intAdmin = mt.Plus_Interest_Chgd_Admin ?? mt.Plus_Interest_Chgd ?? emptyCell;
+                      const intSink = mt.Plus_Interest_Chgd_Sink ?? emptyCell;
+                      const intTotal = mt.Plus_Interest_Chgd_Total ?? mt.Plus_Interest_Chgd ?? emptyCell;
+                      const discAdmin = mt.Less_Discount_Given_Admin ?? mt.Less_Discount_Given ?? emptyCell;
+                      const discSink = mt.Less_Discount_Given_Sink ?? emptyCell;
+                      const discTotal = mt.Less_Discount_Given_Total ?? mt.Less_Discount_Given ?? emptyCell;
+                      return (
+                        <>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Interest Charged</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Interest_Chgd} docs={docs} files={files} /></td>
-                        <td></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Interest_Chgd} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={intAdmin} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={intSink} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={intTotal} docs={docs} files={files} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
-                           {withAction('int_chgd', 'Interest', data.levy_reconciliation.master_table.Plus_Interest_Chgd.note || '-')}
+                           {withAction('int_chgd', 'Interest Charged', intTotal.note || intAdmin.note || '-')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Less: Discount Given</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Less_Discount_Given} docs={docs} files={files} /></td>
-                        <td></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Less_Discount_Given} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={discAdmin} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={discSink} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={discTotal} docs={docs} files={files} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
-                           {withAction('disc_given', 'Discount', data.levy_reconciliation.master_table.Less_Discount_Given.note || '-')}
+                           {withAction('disc_given', 'Discount Given', discTotal.note || discAdmin.note || '-')}
                         </td>
                     </tr>
+                        </>
+                      );
+                    })()}
                      <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Legal Costs Recovery</td>
                         <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Legal_Recovery} docs={docs} files={files} /></td>
@@ -1274,6 +1371,17 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                     </tr>
 
                     {/* GST COMPONENT */}
+                    {(() => {
+                      const mt = data.levy_reconciliation.master_table;
+                      const gAdmin = mt.GST_Admin?.amount ?? 0;
+                      const gSink = mt.GST_Sink?.amount ?? 0;
+                      const gSpecAdmin = mt.GST_Special_Admin?.amount ?? 0;
+                      const gSpecSink = mt.GST_Special_Sink?.amount ?? 0;
+                      const gstStandardTotal: TraceableValue = { amount: gAdmin + gSink, source_doc_id: 'CALCULATED', page_ref: '-', note: 'GST_Admin + GST_Sink', computation: { method: 'sum', expression: 'GST_Admin + GST_Sink' } };
+                      const gstTotalAdmin: TraceableValue = { amount: gAdmin + gSpecAdmin, source_doc_id: 'CALCULATED', page_ref: '-', note: 'GST_Admin + GST_Special_Admin', computation: { method: 'sum', expression: 'GST_Admin + GST_Special_Admin' } };
+                      const gstTotalSink: TraceableValue = { amount: gSink + gSpecSink, source_doc_id: 'CALCULATED', page_ref: '-', note: 'GST_Sink + GST_Special_Sink', computation: { method: 'sum', expression: 'GST_Sink + GST_Special_Sink' } };
+                      return (
+                        <>
                     <tr className="bg-gray-50/50">
                         <td className="px-5 py-3 text-left font-bold text-gray-800 uppercase text-body tracking-wide">
                             GST Component{summary.registered_for_gst === false ? ' (Plan not registered for GST – per Step 0)' : ''}
@@ -1282,31 +1390,34 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">GST on Levies (10%)</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.GST_Admin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.GST_Sink} docs={docs} files={files} /></td>
-                        <td></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Admin} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Sink} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={gstStandardTotal} docs={docs} files={files} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
-                           {withAction('gst_std', 'GST Standard', data.levy_reconciliation.master_table.GST_Admin.note || 'Standard')}
+                           {withAction('gst_std', 'GST Standard', mt.GST_Admin?.note || 'Standard')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
-                        <td className="px-5 py-3 text-left pl-8 text-gray-600">GST on Special Levies</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.GST_Special} docs={docs} files={files} /></td>
-                        <td></td>
-                        <td></td>
+                        <td className="px-5 py-3 text-left pl-8 text-gray-600">GST on Special Levies (10%)</td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special_Admin} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special_Sink} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special} docs={docs} files={files} /></td>
                          <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
-                            {withAction('gst_spec', 'GST Special', data.levy_reconciliation.master_table.GST_Special.note || 'Special')}
+                            {withAction('gst_spec', 'GST Special', mt.GST_Special?.note ?? mt.GST_Special_Admin?.note ?? mt.GST_Special_Sink?.note ?? 'Special')}
                          </td>
                     </tr>
                     <tr className="border-b border-gray-100 font-bold bg-gray-50/30 group hover:bg-gray-50/50">
                         <td className="px-5 py-3 text-left pl-8">(C) TOTAL GST</td>
-                        <td></td>
-                        <td></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Total_GST_Raised} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={gstTotalAdmin} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={gstTotalSink} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.Total_GST_Raised} docs={docs} files={files} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
-                           {withAction('gst_tot', 'Total GST', data.levy_reconciliation.master_table.Total_GST_Raised.note || 'Sum of GST')}
+                           {withAction('gst_tot', 'Total GST', mt.Total_GST_Raised?.note || 'Sum of GST')}
                         </td>
                     </tr>
+                        </>
+                      );
+                    })()}
 
                      {/* TOTALS – (D) = period-only gross, not including (A); reconciliation adds A+D-E in closing row */}
                     <tr className="bg-yellow-50/50 border-y border-gray-200 group hover:bg-yellow-50">
@@ -1520,7 +1631,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                 const yearColumnLabel = item.year_column || safeData.bs_extract?.current_year_label || safeData.bs_column_mapping?.current_year_label || 'Current Year column';
                                                 const bsTrace: TraceableValue = bsDoc
                                                     ? { amount: item.bs_amount ?? 0, source_doc_id: bsDoc.doc_id, page_ref: `${bsDoc.page_range} › ${yearColumnLabel}`, note: item.note || `From BS column '${yearColumnLabel}'` }
-                                                    : { amount: item.bs_amount ?? 0, source_doc_id: 'Balance Sheet (FS)', page_ref: yearColumnLabel, note: item.note || `From BS column '${yearColumnLabel}'` };
+                                                    : { amount: item.bs_amount ?? 0, source_doc_id: '-', page_ref: yearColumnLabel, note: item.note || `From BS column '${yearColumnLabel}' (BS not in register)` };
                                                 const supTrace: TraceableValue = { amount: item.supporting_amount ?? 0, source_doc_id: srcId, page_ref: pageRef, note: item.supporting_note || item.evidence_ref || '' };
                                                 const noteContent = item.supporting_note || item.evidence_ref || '–';
                                                 const isTotalOrSubtotal = item.status === 'SUBTOTAL_CHECK_ONLY' || /^(total|subtotal|net)\s|(total|subtotal)\s*$|^net\s+(assets|liabilities|equity)/i.test(item.line_item || '');

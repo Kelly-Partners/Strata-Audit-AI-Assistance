@@ -10,7 +10,7 @@ Objective: Verify Insurance adequacy, GST roll-forward, and Income Tax calculati
 **EVIDENCE TIER ENFORCEMENT (20_EVIDENCE – MANDATORY):**
 Use only document_register rows where Evidence_Tier matches the required tier for each compliance area.
 
-- **Insurance adequacy** → Tier 1 ONLY. Policy Amount and Valuation Amount MUST be sourced from document_register where Evidence_Tier = Tier 1: Insurance Policy, Certificate of Currency, Valuation Report. Do NOT use management summaries, GL, or Notes.
+- **Insurance adequacy** → Tier 1 ONLY. Policy Amount and Valuation Amount MUST be sourced from document_register where Evidence_Tier = Tier 1: Insurance Policy, Certificate of Currency, Insurance Valuation Report. Do NOT use management summaries, GL, or Notes.
 
 - **GST roll-forward** → Tier 1 for BAS lodgement and Bank Statement (GST Paid). Tier 2 for internal GST schedules. Tier 3 only when Tier 1/2 not available (e.g. GST reconciliation from GL). Use document_register Evidence_Tier to select sources.
 
