@@ -335,6 +335,7 @@ interface ExpenseForensicSubCheck {
   source_doc_id?: string;
   page_ref?: string;
   note?: string;
+  observed?: string;
 }
 
 interface ExpenseForensicPayload {
@@ -459,7 +460,8 @@ const ExpenseForensicPopover: React.FC<{
                           <span className={`ml-2 px-1.5 py-0.5 text-micro font-bold rounded ${sc.passed ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                             {sc.passed ? '✓' : '✗'}
                           </span>
-                          {sc.note && <div className="text-caption text-gray-600 mt-1 italic">{sc.note}</div>}
+                          {sc.observed && <div className="text-caption text-gray-700 mt-1 font-medium">{sc.observed}</div>}
+                          {sc.note && <div className="text-caption text-gray-600 mt-0.5 italic">{sc.note}</div>}
                         </div>
                         {hasEvidence && scFile && (
                           <button
@@ -581,6 +583,7 @@ function buildExpenseForensicPayload(
               source_doc_id: checks[k]?.evidence?.source_doc_id,
               page_ref: checks[k]?.evidence?.page_ref,
               note: checks[k]?.evidence?.note,
+              observed: checks[k]?.observed,
             }))
         : undefined;
       return {
@@ -598,7 +601,7 @@ function buildExpenseForensicPayload(
       let docId = ev?.source_doc_id ? ev.source_doc_id : '–';
       let pageRef = ev?.page_ref || '';
       if (docId === '–' && checks) {
-        const payCheckKeys = ['bank_account_match', 'payee_match', 'amount_match', 'date_match', 'duplicate_check', 'split_payment_check'] as const;
+        const payCheckKeys = ['bank_account_match', 'payee_match', 'amount_match', 'reference_traceable', 'duplicate_check', 'split_payment_check', 'date_match', 'ageing_reasonableness', 'subsequent_payment_check'] as const;
         const firstWithEvidence = payCheckKeys.find((k) => checks[k]?.evidence?.source_doc_id);
         if (firstWithEvidence && checks[firstWithEvidence].evidence?.source_doc_id) {
           docId = checks[firstWithEvidence].evidence!.source_doc_id;
@@ -608,13 +611,16 @@ function buildExpenseForensicPayload(
       const PAY_CHECK_LABELS: Record<string, string> = {
         bank_account_match: 'Bank account (OC)',
         payee_match: 'Payee match',
+        amount_match: 'Amount match',
+        reference_traceable: 'Ref traceable',
         duplicate_check: 'Duplicate check',
         split_payment_check: 'Split payment',
-        amount_match: 'Amount match',
         date_match: 'Date match',
+        ageing_reasonableness: 'Ageing (>90d)',
+        subsequent_payment_check: 'Subsequent payment',
       };
       const subChecks: ExpenseForensicSubCheck[] | undefined = checks
-        ? (['bank_account_match', 'payee_match', 'duplicate_check', 'split_payment_check', 'amount_match', 'date_match'] as const)
+        ? (['bank_account_match', 'payee_match', 'amount_match', 'reference_traceable', 'duplicate_check', 'split_payment_check', 'date_match', 'ageing_reasonableness', 'subsequent_payment_check'] as const)
             .filter((k) => checks[k] != null)
             .map((k) => ({
               label: PAY_CHECK_LABELS[k] ?? k,
@@ -622,6 +628,7 @@ function buildExpenseForensicPayload(
               source_doc_id: checks[k]?.evidence?.source_doc_id,
               page_ref: checks[k]?.evidence?.page_ref,
               note: checks[k]?.evidence?.note,
+              observed: checks[k]?.observed,
             }))
         : undefined;
       return {
@@ -1983,9 +1990,8 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                     {inv ? (() => {
                                                       const c = inv.checks;
                                                       const keys = c ? (['sp_number', 'address', 'amount', 'gst_verified', 'payee_match', 'abn_valid'] as const).filter((k) => c![k] != null) : [];
-                                                      const allPassed = keys.length > 0
-                                                        ? keys.every((k) => c![k]!.passed)
-                                                        : (inv.addressed_to_strata && inv.payee_match);
+                                                      if (keys.length === 0) return '–';
+                                                      const allPassed = keys.every((k) => c![k]!.passed);
                                                       return allPassed ? '✅' : '⚠';
                                                     })() : '–'}
                                                 </button>
@@ -1993,13 +1999,12 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
                                                 <button type="button" onClick={() => setExpenseForensic({ pillar: 'PAY', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
                                                     {pay ? (() => {
+                                                      if (pay.status === 'BANK_STMT_MISSING' || pay.status === 'MISSING') return '⚠';
                                                       const c = pay.checks;
-                                                      const keys = c ? (['bank_account_match', 'payee_match', 'duplicate_check', 'split_payment_check', 'amount_match', 'date_match'] as const).filter((k) => c![k] != null) : [];
-                                                      const allPassed = keys.length > 0
-                                                        ? keys.every((k) => c![k]!.passed)
-                                                        : (pay.status === 'PAID' || pay.status === 'ACCRUED') && pay.amount_match;
-                                                      if (keys.length > 0) return allPassed ? '✅' : '⚠';
-                                                      return pay.status === 'PAID' ? '✅' : pay.status === 'ACCRUED' ? '⏳' : '❌';
+                                                      const keys = c ? (['bank_account_match', 'payee_match', 'amount_match', 'reference_traceable', 'duplicate_check', 'split_payment_check', 'date_match', 'ageing_reasonableness', 'subsequent_payment_check'] as const).filter((k) => c![k] != null) : [];
+                                                      if (keys.length === 0) return '–';
+                                                      const allPassed = keys.every((k) => c![k]!.passed);
+                                                      return allPassed ? '✅' : '⚠';
                                                     })() : '–'}
                                                 </button>
                                             </td>

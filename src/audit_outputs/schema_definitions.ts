@@ -148,36 +148,41 @@ const ExpenseEvidenceRefSchema = z.object({
   extracted_amount: z.number().optional(),
 });
 
-/** Invoice sub-check: passed + evidence per check. */
+/** Invoice sub-check: passed + evidence + observed value. */
 const InvoiceCheckItemSchema = z.object({
   passed: z.boolean(),
   evidence: ExpenseEvidenceRefSchema.optional(),
+  observed: z.string().optional(),
 });
 
-/** Invoice checks – per-check pass + evidence for Forensic. */
+/** Invoice checks – REQUIRED per-check pass + evidence for Forensic. */
 const InvoiceChecksSchema = z.object({
-  sp_number: InvoiceCheckItemSchema.optional(),
-  address: InvoiceCheckItemSchema.optional(),
-  amount: InvoiceCheckItemSchema.optional(),
-  gst_verified: InvoiceCheckItemSchema.optional(),
-  payee_match: InvoiceCheckItemSchema.optional(),
-  abn_valid: InvoiceCheckItemSchema.optional(),
+  sp_number: InvoiceCheckItemSchema,
+  address: InvoiceCheckItemSchema,
+  amount: InvoiceCheckItemSchema,
+  gst_verified: InvoiceCheckItemSchema,
+  payee_match: InvoiceCheckItemSchema,
+  abn_valid: InvoiceCheckItemSchema,
 });
 
 /** Payment sub-check: same structure as Invoice. */
 const PaymentCheckItemSchema = z.object({
   passed: z.boolean(),
   evidence: ExpenseEvidenceRefSchema.optional(),
+  observed: z.string().optional(),
 });
 
-/** Payment checks – per-check pass + evidence for Forensic. */
+/** Payment checks – REQUIRED. PAID: bank/ref/dup/split/date + ageing/subsequent N/A. ACCRUED: payee/amount/ageing/subsequent + others N/A. */
 const PaymentChecksSchema = z.object({
-  bank_account_match: PaymentCheckItemSchema.optional(),
-  payee_match: PaymentCheckItemSchema.optional(),
-  duplicate_check: PaymentCheckItemSchema.optional(),
-  split_payment_check: PaymentCheckItemSchema.optional(),
-  amount_match: PaymentCheckItemSchema.optional(),
-  date_match: PaymentCheckItemSchema.optional(),
+  bank_account_match: PaymentCheckItemSchema,
+  payee_match: PaymentCheckItemSchema,
+  amount_match: PaymentCheckItemSchema,
+  reference_traceable: PaymentCheckItemSchema,
+  duplicate_check: PaymentCheckItemSchema,
+  split_payment_check: PaymentCheckItemSchema,
+  date_match: PaymentCheckItemSchema,
+  ageing_reasonableness: PaymentCheckItemSchema,
+  subsequent_payment_check: PaymentCheckItemSchema,
 });
 
 /** Phase 3 v2: Three-way match */
@@ -185,7 +190,7 @@ const ThreeWayMatchSchema = z.object({
   invoice: z.object({
     id: z.string(),
     date: z.string(),
-    checks: InvoiceChecksSchema.optional(),
+    checks: InvoiceChecksSchema,
     payee_match: z.boolean(),
     abn_valid: z.boolean(),
     addressed_to_strata: z.boolean(),
@@ -197,7 +202,7 @@ const ThreeWayMatchSchema = z.object({
     amount_match: z.boolean(),
     source_doc: z.string().optional(),
     creditors_ref: z.string().optional(),
-    checks: PaymentChecksSchema.optional(),
+    checks: PaymentChecksSchema,
     evidence: ExpenseEvidenceRefSchema.optional(),
   }),
   authority: z.object({

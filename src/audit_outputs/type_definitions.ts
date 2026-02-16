@@ -247,36 +247,43 @@ export interface ExpenseEvidenceRef {
   extracted_amount?: number;
 }
 
-/** Invoice sub-check: passed + evidence for forensic trace per check. */
+/** Invoice sub-check: passed + evidence + observed value for forensic trace. */
 export interface InvoiceCheckItem {
   passed: boolean;
   evidence?: ExpenseEvidenceRef;
+  /** Observed value from document for audit trail, e.g. "Invoice $1100 vs GL $1100; within tolerance" */
+  observed?: string;
 }
 
-/** Invoice checks: each sub-check with pass + evidence (for Forensic). */
+/** Invoice checks: each sub-check REQUIRED with pass + evidence (for Forensic). */
 export interface InvoiceChecks {
-  sp_number?: InvoiceCheckItem;
-  address?: InvoiceCheckItem;
-  amount?: InvoiceCheckItem;
-  gst_verified?: InvoiceCheckItem;
-  payee_match?: InvoiceCheckItem;
-  abn_valid?: InvoiceCheckItem;
+  sp_number: InvoiceCheckItem;
+  address: InvoiceCheckItem;
+  amount: InvoiceCheckItem;
+  gst_verified: InvoiceCheckItem;
+  payee_match: InvoiceCheckItem;
+  abn_valid: InvoiceCheckItem;
 }
 
-/** Payment sub-check: passed + evidence for forensic trace per check (same structure as Invoice). */
+/** Payment sub-check: passed + evidence + observed value (same structure as Invoice). */
 export interface PaymentCheckItem {
   passed: boolean;
   evidence?: ExpenseEvidenceRef;
+  /** Observed value for audit trail, e.g. "Bank $1100 vs GL $1100; payee ABC Pty Ltd" */
+  observed?: string;
 }
 
-/** Payment checks: per-check pass + evidence for Forensic. Aligns with audit assertions. */
+/** Payment checks: each sub-check REQUIRED. PAID: bank/ref/dup/split/date + ageing/subsequent N/A. ACCRUED: payee/amount/ageing/subsequent + others N/A. */
 export interface PaymentChecks {
-  bank_account_match?: PaymentCheckItem;
-  payee_match?: PaymentCheckItem;
-  duplicate_check?: PaymentCheckItem;
-  split_payment_check?: PaymentCheckItem;
-  amount_match?: PaymentCheckItem;
-  date_match?: PaymentCheckItem;
+  bank_account_match: PaymentCheckItem;
+  payee_match: PaymentCheckItem;
+  amount_match: PaymentCheckItem;
+  reference_traceable: PaymentCheckItem;
+  duplicate_check: PaymentCheckItem;
+  split_payment_check: PaymentCheckItem;
+  date_match: PaymentCheckItem;
+  ageing_reasonableness: PaymentCheckItem;
+  subsequent_payment_check: PaymentCheckItem;
 }
 
 /** Phase 3 v2: Three-way match (Invoice / Payment). Authority removed – optional for backward compat. */
@@ -284,8 +291,8 @@ export interface ThreeWayMatch {
   invoice: {
     id: string;
     date: string;
-    /** Per-check pass + evidence (each links to PDF). */
-    checks?: InvoiceChecks;
+    /** Per-check pass + evidence – REQUIRED. Each check links to PDF. */
+    checks: InvoiceChecks;
     /** Top-level summary – keep for backward compat and quick status. */
     payee_match: boolean;
     abn_valid: boolean;
@@ -299,8 +306,8 @@ export interface ThreeWayMatch {
     amount_match: boolean;
     source_doc?: string;
     creditors_ref?: string;
-    /** Per-check pass + evidence (each links to PDF) – same granularity as invoice. */
-    checks?: PaymentChecks;
+    /** Per-check pass + evidence – REQUIRED. Same granularity as invoice. */
+    checks: PaymentChecks;
     /** Forensic: page_ref and context for Evidence Chain popover. source_doc used as Doc ID when evidence not set. */
     evidence?: ExpenseEvidenceRef;
   };

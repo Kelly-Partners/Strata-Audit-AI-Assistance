@@ -35,35 +35,53 @@ STEP B: THREE-WAY MATCH EXECUTION
 For each selected item, perform three checks and populate Three_Way_Match:
 
 1. INVOICE VALIDITY (invoice) – TIER 1 ONLY:
-   - Source: document_register rows with Evidence_Tier = Tier 1 (Tax Invoice, supplier invoice).
-   - id: Invoice document ref (Doc_ID/Page). date: Invoice date.
-   - Populate checks (each with passed: boolean + evidence: { source_doc_id, page_ref, note }) – each check links to Forensic/PDF:
-     * sp_number: Invoice/cover shows SP number matching intake_summary.strata_plan. passed = true if match.
-     * address: Invoice addressed to "The Owners - Strata Plan X" or equivalent OC (not Manager/Owner/Agent only). passed = true if correct.
-     * amount: Invoice amount matches GL_Amount within ±1% or ±$10. passed = true if match.
-   * gst_verified: Use intake_summary.registered_for_gst (LOCKED). If registered → invoice shows GST component and amount correct; if not registered → no GST on invoice. passed = true if consistent.
-   * payee_match: GL Payee matches Invoice Payee. passed = true if match.
-   * abn_valid: ABN present and 11 digits. passed = true if valid.
-   - Top-level: payee_match, abn_valid, addressed_to_strata (derived from checks for backward compat; keep in sync).
-   - Invoice validity = PASS only if ALL available checks pass (sp_number, address, amount, gst_verified, payee_match, abn_valid). If any check fails, treat invoice as FAIL. Each check's evidence MUST include source_doc_id and page_ref for PDF link in Forensic popover.
 
-2. PAYMENT EVIDENCE (payment) – with checks (same granularity as invoice):
-   - **PAID** – TIER 1 ONLY: Search Bank Statement (document_register where Evidence_Tier = Tier 1) for the specific amount on/after the GL Date (allow ±14 days). IF FOUND in Bank -> status = "PAID", source_doc = Bank Statement Doc_ID, bank_date = statement date.
-   - **ACCRUED** – TIER 2 ONLY: IF NOT in Bank -> Check Creditors/Accrued Expenses report (document_register where Evidence_Tier = Tier 2). If found -> status = "ACCRUED", creditors_ref = report Doc_ID/Page.
-   - IF NOT in Bank AND NOT in Creditors -> status = "MISSING".
-   - IF Bank Statement exists but transaction not found or pages missing -> status = "BANK_STMT_MISSING".
-   - **MANDATORY TRACEABILITY:** For payment.checks.*.evidence, always set source_doc_id to the relevant Document_ID (Bank Statement or Creditors Report). Do NOT use "-" when a document exists. If transaction not found, set page_ref = "All" or searched page range and state why in note.
-   - Do NOT use Tier 3 (GL, FS, Notes) as payment evidence.
+   **MANDATORY – Extract from Tier 1 invoice document ONLY. Do NOT infer or fill missing fields from GL, intake_summary, or other documents.**
 
-   Populate payment.checks (each with passed: boolean + evidence: { source_doc_id, page_ref, note }) – each check links to Forensic/PDF:
-   * bank_account_match: Payment is from the scheme's bank account (not manager/personal/other). passed = true if account is OC/Strata account.
-   * payee_match: Bank payee/recipient matches GL_Payee or invoice payee. passed = true if match.
-   * duplicate_check: No duplicate payment (same supplier, same amount, similar date). passed = true if not duplicate.
-   * split_payment_check: Not a split payment (use Risk_Profile.is_split_invoice). passed = true if no split or split is justified.
-   * amount_match: Bank amount matches GL within ±1% or ±$10. passed = true if match. Top-level amount_match must stay in sync.
-   * date_match: Payment date within GL Date ±14 days. passed = true if within window.
-   - FAIL if bank_account_match, payee_match, amount_match, duplicate_check, or split_payment_check fails. date_match failure -> RISK_FLAG.
-   - Each check's evidence MUST include source_doc_id and page_ref for PDF link in Forensic popover.
+   STEP 1 – FIELD EXTRACTION (from invoice PDF only):
+   Extract: invoice_number, invoice_date, supplier_name, supplier_abn, invoice_net_amount, invoice_gst_amount, invoice_gross_total, invoice_addressed_to, sp_number_visible.
+   If any field cannot be located in the invoice → note which field is missing in evidence. Do NOT assume or infer from GL.
+
+   STEP 2 – LEGAL MINIMUM CHECK:
+   Fail immediately (abn_valid = false or address = false as applicable) if any of: supplier_name missing, supplier_abn missing or not 11 digits, invoice_number missing, invoice_date missing, invoice_gross_total missing.
+
+   STEP 3 – STRATA PLAN OWNERSHIP & SP NUMBER:
+   - sp_number: sp_number_visible must match intake_summary.strata_plan. passed = true only if match.
+   - address: invoice_addressed_to must contain "The Owners – Strata Plan XXXX" or equivalent Owners Corporation naming. If addressed only to manager, individual, or generic entity → passed = false.
+
+   STEP 4 – AMOUNT COMPARISON:
+   Compare invoice_gross_total vs GL_Amount. Tolerance: ±$10 OR ±1%. Record difference in evidence.note. passed = true only if within tolerance.
+
+   STEP 5 – GST CONSISTENCY:
+   Use intake_summary.registered_for_gst (LOCKED). First read invoice for GST treatment.
+   - If registered_for_gst = true: invoice must show GST component (itemized GST amount > 0, OR explicit "GST inclusive"/"incl GST" text). Do NOT assume compliance without visible evidence.
+   - If registered_for_gst = false: invoice_gst_amount must be 0 or not shown. If invoice shows GST line → passed = false.
+
+   STEP 6 – PAYEE MATCH:
+   Normalized(supplier_name) must match GL_Payee. Minor formatting differences allowed. Different legal entity → passed = false.
+
+   **OUTPUT:** Populate checks (REQUIRED – all six) – each with passed: boolean, evidence: { source_doc_id, page_ref, note }, and observed: string. Note MUST state what was compared and the result. Observed MUST state the actual values read (e.g. "Invoice $1100 vs GL $1100; within tolerance" for amount; "ABN 12 345 678 901" for abn_valid):
+     * sp_number, address, amount, gst_verified, payee_match, abn_valid.
+   - id: Invoice Doc_ID/Page. date: invoice_date from extraction.
+   - Top-level: payee_match, abn_valid, addressed_to_strata (derived from checks; keep in sync).
+   - Invoice validity = PASS only if ALL checks pass. Each check's evidence MUST include source_doc_id and page_ref for Forensic popover.
+   - **If no Tier 1 invoice found:** set invoice.id = "", date = "", each check passed = false with note "No invoice document found". Invoice validity = FAIL.
+
+2. PAYMENT EVIDENCE (payment) – NSW STRATA STANDARD (Observation-First):
+   **GENERAL RULES:** PAID = Tier 1 Bank Statement ONLY. ACCRUED = Tier 2 Creditors ONLY. Do NOT use GL, FS, Notes, or Bank Reconciliation as Bank substitute. All checks MUST output observed values. Do NOT infer from GL or intake_summary.
+
+   **A) PAID – STEP P1 SEARCH:** Date: GL_Date ±14 days. Amount: GL_Amount ±$10 OR ±1%. If multiple candidates: use payee, reference, account to isolate ONE.
+   **STEP P2 OBSERVED (from Bank):** bank_txn_date, bank_amount, bank_payee_text, bank_reference_text, bank_account_name, bank_page_ref. Compare: gl_date, gl_amount, gl_payee, invoice_payee.
+   **STEP P3 CHECKS:** bank_account_match (NSW Trust: account must indicate OC/Strata Plan). payee_match (normalized bank_payee vs invoice/gl). amount_match (bank vs gl within tolerance). reference_traceable (bank_reference_text contains invoice_number or identifiable job ref; if multiple candidates and cannot uniquely trace → FAIL; if reference absent but unique match → RISK_FLAG). duplicate_check (scan ±30 days same payee+amount; observed = found_matches_count). split_payment_check (7–14 days same payee; sum > manager_limit without authority → FAIL). date_match (within ±14 days; outside → RISK_FLAG).
+   **STEP P4 STATUS:** Unique match + CRITICAL passed → "PAID". Bank exists but not found → "BANK_STMT_MISSING". CRITICAL fails → status "PAID" but Overall_Status FAIL. Bank Reconciliation without Statement → "BANK_STMT_MISSING".
+
+   **B) ACCRUED – STEP A1 OBSERVED:** creditor_name_text, outstanding_amount, report_as_at_date, ageing_bucket (if shown), report_page_ref.
+   **STEP A2 CHECKS:** payee_match (creditor vs gl/invoice). amount_match (outstanding vs gl). ageing_reasonableness (if outstanding > 90 days → RISK_FLAG; passed=true but flag). subsequent_payment_check (IF next-period bank available: search +30 to +120 days; no payment evidence for significant amount → RISK_FLAG; if no next-period bank → N/A). bank_account_match, reference_traceable, duplicate_check, split_payment_check, date_match → N/A (passed=true, note "N/A – ACCRUED").
+
+   **C) MISSING:** IF NOT in Bank AND NOT in Creditors → status = "MISSING". Output all 9 checks with passed = false, note "No payment evidence – neither Bank nor Creditors found".
+   **MANDATORY:** source_doc_id = Bank/Creditors Document_ID. payment.amount_match (top-level) must equal checks.amount_match.passed. Do NOT use Tier 3 as payment evidence.
+
+   **OUTPUT payment.checks (REQUIRED):** PAID: bank_account_match, payee_match, amount_match, reference_traceable, duplicate_check, split_payment_check, date_match, ageing_reasonableness (N/A), subsequent_payment_check (N/A). ACCRUED: payee_match, amount_match, ageing_reasonableness, subsequent_payment_check (real); bank_account_match, reference_traceable, duplicate_check, split_payment_check, date_match (N/A). Each with passed, evidence, observed. FAIL if CRITICAL fails. RISK_FLAG: date_match outside, ageing >90d, subsequent_payment missing.
 
 `;
 
@@ -85,7 +103,7 @@ Objective: Execute MODULE 'EXPENSE_RISK_FRAMEWORK'. Do NOT sample randomly.
 
 2. For each item in the Target Sample List, execute STEP B (Three-Way Match) and STEP C (Fund Integrity). Output GL_ID (or unique ref), GL_Date, GL_Payee, GL_Amount (TraceableValue), Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status.
 
-3. Overall_Status: "PASS" = Invoice valid (all checks pass) + (PAID or ACCRUED) + CORRECT fund. "FAIL" = any of: any invoice check failed (including payee_match or abn_valid), payment MISSING, MISCLASSIFIED. "RISK_FLAG" = BANK_STMT_MISSING or UNCERTAIN fund.
+3. Overall_Status: "PASS" = Invoice valid (all checks pass) + (PAID or ACCRUED) + CORRECT fund. "FAIL" = any of: any invoice check failed, payment MISSING, payment CRITICAL check failed (bank_account_match, payee_match, amount_match, duplicate_check, split_payment_check), MISCLASSIFIED. "RISK_FLAG" = BANK_STMT_MISSING, UNCERTAIN fund, or payment RISK (date_match outside ±14d, ageing >90d, subsequent_payment missing, reference_traceable insufficient).
 
 4. You MUST explicitly distinguish "PAID" (found in bank) vs "ACCRUED" (found in creditors report).
 `;
