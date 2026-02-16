@@ -2387,6 +2387,192 @@
                   "date": {
                     "type": "string"
                   },
+                  "checks": {
+                    "type": "object",
+                    "properties": {
+                      "sp_number": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "address": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "amount": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "gst_verified": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "payee_match": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "abn_valid": {
+                        "type": "object",
+                        "properties": {
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "evidence": {
+                            "type": "object",
+                            "properties": {
+                              "source_doc_id": {
+                                "type": "string"
+                              },
+                              "page_ref": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "extracted_amount": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "passed"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  },
                   "payee_match": {
                     "type": "boolean"
                   },

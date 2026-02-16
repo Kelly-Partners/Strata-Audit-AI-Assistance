@@ -320,12 +320,23 @@ const ForensicCell: React.FC<{
 };
 
 /** Payload for Expense Forensic popover: Source Doc, Doc ID, Extracted, Context/Note, View in PDF */
+/** Sub-check for Invoice Forensic – each has pass + evidence (PDF link). */
+interface ExpenseForensicSubCheck {
+  label: string;
+  passed: boolean;
+  source_doc_id?: string;
+  page_ref?: string;
+  note?: string;
+}
+
 interface ExpenseForensicPayload {
   title: string;
   source_doc_id: string;
   page_ref: string;
   note: string;
   extracted_amount?: number;
+  /** Invoice only: per-check items for Forensic list + PDF links */
+  subChecks?: ExpenseForensicSubCheck[];
 }
 
 /** Resolve document from source_doc_id – ONLY Document_ID match (document_register is single source of truth) */
@@ -369,21 +380,31 @@ const ExpenseForensicPopover: React.FC<{
 }> = ({ payload, docs, files, onClose }) => {
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfTarget, setPdfTarget] = useState<{ docName?: string; pageRef?: string } | null>(null);
   const safeDocs = docs || [];
-  const doc = resolveDocForExpense(safeDocs, payload.source_doc_id);
-  const originName = doc?.Document_Origin_Name;
-  const targetFile = originName ? findFileByName(files, originName) : undefined;
 
-  const handleOpenPdf = () => {
+  const openPdf = (sourceDocId: string, pageRef: string) => {
+    const doc = resolveDocForExpense(safeDocs, sourceDocId);
+    const originName = doc?.Document_Origin_Name;
+    const targetFile = originName ? findFileByName(files, originName) : undefined;
     if (!targetFile) {
       alert("Original source file not found in current session. Please re-upload evidence to view.");
       return;
     }
     const objectUrl = URL.createObjectURL(targetFile);
-    const pageNum = extractPageNumber(payload.page_ref || payload.note || "");
+    const pageNum = extractPageNumber(pageRef || "");
     const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
+    setPdfTarget({ docName: originName, pageRef: pageRef || undefined });
     setPdfUrl(finalUrl);
     setShowPdfModal(true);
+  };
+
+  const doc = resolveDocForExpense(safeDocs, payload.source_doc_id);
+  const originName = doc?.Document_Origin_Name;
+  const targetFile = originName ? findFileByName(files, originName) : undefined;
+
+  const handleOpenPdf = () => {
+    openPdf(payload.source_doc_id, payload.page_ref || payload.note || "");
   };
 
   useEffect(() => {
@@ -401,6 +422,8 @@ const ExpenseForensicPopover: React.FC<{
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showPdfModal, onClose]);
 
+  const hasSubChecks = payload.subChecks && payload.subChecks.length > 0;
+
   return (
     <>
       <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
@@ -413,6 +436,39 @@ const ExpenseForensicPopover: React.FC<{
             <button onClick={onClose} className="text-gray-400 hover:text-black">✕</button>
           </div>
           <div className="p-5 space-y-4 max-h-[400px] overflow-y-auto">
+            {hasSubChecks ? (
+              <>
+                <span className="text-caption uppercase text-gray-400 font-bold block mb-2 tracking-widest">Invoice checks</span>
+                {payload.subChecks!.map((sc, i) => {
+                  const hasEvidence = sc.source_doc_id && sc.source_doc_id !== '-' && sc.source_doc_id !== 'N/A';
+                  const scDoc = hasEvidence ? resolveDocForExpense(safeDocs, sc.source_doc_id!) : undefined;
+                  const scFile = scDoc?.Document_Origin_Name ? findFileByName(files, scDoc.Document_Origin_Name) : undefined;
+                  return (
+                    <div key={i} className="border border-gray-200 rounded p-3 bg-gray-50/50">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold text-gray-800">{sc.label}</span>
+                          <span className={`ml-2 px-1.5 py-0.5 text-micro font-bold rounded ${sc.passed ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {sc.passed ? '✓' : '✗'}
+                          </span>
+                          {sc.note && <div className="text-caption text-gray-600 mt-1 italic">{sc.note}</div>}
+                        </div>
+                        {hasEvidence && scFile && (
+                          <button
+                            type="button"
+                            onClick={() => openPdf(sc.source_doc_id!, sc.page_ref || '')}
+                            className="shrink-0 px-2 py-1 text-caption font-bold uppercase bg-[#004F9F] text-white rounded hover:bg-[#003d7a]"
+                          >
+                            View PDF
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+            <>
             <div>
               <span className="text-caption uppercase text-gray-400 font-bold block mb-1 tracking-widest">Source Document</span>
               <div className="text-body font-bold text-black bg-gray-50 border border-gray-200 p-3 break-words">
@@ -456,6 +512,8 @@ const ExpenseForensicPopover: React.FC<{
                 View source document in PDF
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>
@@ -465,8 +523,8 @@ const ExpenseForensicPopover: React.FC<{
             <div className="flex justify-between items-center bg-[#111] text-white px-6 py-4 border-b border-gray-800 shrink-0">
               <div className="flex items-center gap-3 overflow-hidden">
                 <span className="bg-[#004F9F] text-white text-caption font-bold px-2 py-1 rounded-sm uppercase">Evidence Preview</span>
-                <span className="font-bold truncate text-gray-300" title={targetFile?.name}>{doc ? doc.Document_Origin_Name : targetFile?.name}</span>
-                {payload.page_ref && <span className="text-[#004F9F] text-body">/ {payload.page_ref}</span>}
+                <span className="font-bold truncate text-gray-300" title={pdfTarget?.docName || targetFile?.name}>{pdfTarget?.docName || doc?.Document_Origin_Name || targetFile?.name}</span>
+                {(pdfTarget?.pageRef || payload.page_ref) && <span className="text-[#004F9F] text-body">/ {pdfTarget?.pageRef || payload.page_ref}</span>}
               </div>
               <button onClick={() => setShowPdfModal(false)} className="text-gray-400 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2">✕</button>
             </div>
@@ -498,12 +556,33 @@ function buildExpenseForensicPayload(
     case 'INV': {
       const ev = inv?.evidence;
       const { docId, pageRef } = ev?.source_doc_id ? { docId: ev.source_doc_id, pageRef: ev.page_ref || '' } : parseId(inv?.id || '');
+      const checks = inv?.checks;
+      const CHECK_LABELS: Record<string, string> = {
+        sp_number: 'SP number',
+        address: 'Address to OC',
+        amount: 'Amount match',
+        gst_verified: 'GST verified',
+        payee_match: 'Payee match',
+        abn_valid: 'ABN valid',
+      };
+      const subChecks: ExpenseForensicSubCheck[] | undefined = checks
+        ? (['sp_number', 'address', 'amount', 'gst_verified', 'payee_match', 'abn_valid'] as const)
+            .filter((k) => checks[k] != null)
+            .map((k) => ({
+              label: CHECK_LABELS[k] ?? k,
+              passed: checks[k]!.passed,
+              source_doc_id: checks[k]?.evidence?.source_doc_id,
+              page_ref: checks[k]?.evidence?.page_ref,
+              note: checks[k]?.evidence?.note,
+            }))
+        : undefined;
       return {
         title: 'Invoice',
         source_doc_id: docId,
         page_ref: pageRef,
         note: ev?.note ?? (inv ? `Addressed to OC: ${inv.addressed_to_strata}; Payee match: ${inv.payee_match}; ABN valid: ${inv.abn_valid}. Ref: ${inv.id}` : '–'),
         extracted_amount: ev?.extracted_amount,
+        subChecks: subChecks && subChecks.length > 0 ? subChecks : undefined,
       };
     }
     case 'PAY': {
@@ -1729,7 +1808,14 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                             <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} /></td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
                                                 <button type="button" onClick={() => setExpenseForensic({ pillar: 'INV', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
-                                                    {inv ? (inv.addressed_to_strata && inv.payee_match ? '✅' : '❌') : '–'}
+                                                    {inv ? (() => {
+                                                      const c = inv.checks;
+                                                      const keys = c ? (['sp_number', 'address', 'amount', 'gst_verified', 'payee_match', 'abn_valid'] as const).filter((k) => c![k] != null) : [];
+                                                      const allPassed = keys.length > 0
+                                                        ? keys.every((k) => c![k]!.passed)
+                                                        : (inv.addressed_to_strata && inv.payee_match);
+                                                      return allPassed ? '✅' : '⚠';
+                                                    })() : '–'}
                                                 </button>
                                             </td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">

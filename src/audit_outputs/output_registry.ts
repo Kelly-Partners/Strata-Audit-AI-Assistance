@@ -161,7 +161,7 @@ JSON SCHEMA:
       "GL_Amount": { "amount": Number, "source_doc_id": "String", "page_ref": "String", "verbatim_quote": "String" },
       "Risk_Profile": { "is_material": Boolean, "risk_keywords": ["String"], "is_split_invoice": Boolean, "selection_reason": "String" },
       "Three_Way_Match": {
-        "invoice": { "id": "String", "date": "String", "payee_match": Boolean, "abn_valid": Boolean, "addressed_to_strata": Boolean, "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } },
+        "invoice": { "id": "String", "date": "String", "checks": { "sp_number": { "passed": Boolean, "evidence": { "source_doc_id", "page_ref", "note" } }, "address": { "passed", "evidence" }, "amount": { "passed", "evidence" }, "gst_verified": { "passed", "evidence" }, "payee_match": { "passed", "evidence" }, "abn_valid": { "passed", "evidence" } }, "payee_match": Boolean, "abn_valid": Boolean, "addressed_to_strata": Boolean, "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } },
         "payment": { "status": "PAID|ACCRUED|MISSING|BANK_STMT_MISSING", "bank_date": "String", "amount_match": Boolean, "source_doc": "String", "creditors_ref": "String", "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } },
         "authority": { "required_tier": "MANAGER|COMMITTEE|GENERAL_MEETING", "limit_applied": Number, "minute_ref": "String", "status": "AUTHORISED|UNAUTHORISED|NO_MINUTES_FOUND|MINUTES_NOT_AVAILABLE", "evidence": { "source_doc_id": "String", "page_ref": "String", "note": "String", "extracted_amount": Number } }
       },

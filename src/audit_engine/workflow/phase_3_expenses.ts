@@ -27,7 +27,17 @@ For each selected item, perform three checks and populate Three_Way_Match:
 
 1. INVOICE VALIDITY (invoice) – TIER 1 ONLY:
    - Source: document_register rows with Evidence_Tier = Tier 1 (Tax Invoice, supplier invoice).
-   - id: Invoice document ref (Doc_ID/Page). date: Invoice date. payee_match: GL Payee matches Invoice Payee. abn_valid: ABN present and 11 digits. addressed_to_strata: Invoice MUST be addressed to "The Owners - Strata Plan X" or equivalent OC; if addressed to Manager/Owner/Agent only = FAIL (addressed_to_strata = false).
+   - id: Invoice document ref (Doc_ID/Page). date: Invoice date.
+   - Populate checks (each with passed: boolean + evidence: { source_doc_id, page_ref, note }) – each check links to Forensic/PDF:
+     * sp_number: Invoice/cover shows SP number matching intake_summary.strata_plan. passed = true if match.
+     * address: Invoice addressed to "The Owners - Strata Plan X" or equivalent OC (not Manager/Owner/Agent only). passed = true if correct.
+     * amount: Invoice amount matches GL_Amount within ±1% or ±$10. passed = true if match.
+   * gst_verified: Use intake_summary.registered_for_gst (LOCKED). If registered → invoice shows GST component and amount correct; if not registered → no GST on invoice. passed = true if consistent.
+   * payee_match: GL Payee matches Invoice Payee. passed = true if match.
+   * abn_valid: ABN present and 11 digits. passed = true if valid.
+   - Top-level: payee_match, abn_valid, addressed_to_strata (derived from checks for backward compat; keep in sync).
+   - Top-level: payee_match, abn_valid, addressed_to_strata (derived from checks for backward compat; keep in sync).
+   - Invoice validity = PASS only if ALL available checks pass (sp_number, address, amount, gst_verified, payee_match, abn_valid). If any check fails, treat invoice as FAIL. Each check's evidence MUST include source_doc_id and page_ref for PDF link in Forensic popover.
 
 2. PAYMENT EVIDENCE (payment):
    - **PAID** – TIER 1 ONLY: Search Bank Statement (document_register where Evidence_Tier = Tier 1) for the specific amount on/after the GL Date (allow ±14 days). amount_match: Bank amount matches GL within ±1% or ±$10. IF FOUND in Bank -> status = "PAID", source_doc = Bank Statement ref. IF Bank Statement is missing or unreadable -> status = "BANK_STMT_MISSING" (do not use "MISSING").
@@ -61,7 +71,7 @@ Objective: Execute MODULE 'EXPENSE_RISK_FRAMEWORK'. Do NOT sample randomly.
 
 2. For each item in the Target Sample List, execute STEP B (Three-Way Match) and STEP C (Fund Integrity). Output GL_ID (or unique ref), GL_Date, GL_Payee, GL_Amount (TraceableValue), Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status.
 
-3. Overall_Status: "PASS" = Invoice valid + (PAID or ACCRUED) + AUTHORISED + CORRECT fund. "FAIL" = any of: addressed_to_strata false, payment MISSING, authority UNAUTHORISED, MISCLASSIFIED. "RISK_FLAG" = BANK_STMT_MISSING or MINUTES_NOT_AVAILABLE or UNCERTAIN fund.
+3. Overall_Status: "PASS" = Invoice valid (all checks pass) + (PAID or ACCRUED) + AUTHORISED + CORRECT fund. "FAIL" = any of: any invoice check failed (including payee_match or abn_valid), payment MISSING, authority UNAUTHORISED, MISCLASSIFIED. "RISK_FLAG" = BANK_STMT_MISSING or MINUTES_NOT_AVAILABLE or UNCERTAIN fund.
 
 4. You MUST explicitly distinguish "PAID" (found in bank) vs "ACCRUED" (found in creditors report). You MUST fail the Authority Test if Committee/AGM approval is required but no minute_ref is found.
 

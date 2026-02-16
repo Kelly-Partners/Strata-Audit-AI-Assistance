@@ -236,15 +236,34 @@ export interface ExpenseEvidenceRef {
   extracted_amount?: number;
 }
 
+/** Invoice sub-check: passed + evidence for forensic trace per check. */
+export interface InvoiceCheckItem {
+  passed: boolean;
+  evidence?: ExpenseEvidenceRef;
+}
+
+/** Invoice checks: each sub-check with pass + evidence (for Forensic). */
+export interface InvoiceChecks {
+  sp_number?: InvoiceCheckItem;
+  address?: InvoiceCheckItem;
+  amount?: InvoiceCheckItem;
+  gst_verified?: InvoiceCheckItem;
+  payee_match?: InvoiceCheckItem;
+  abn_valid?: InvoiceCheckItem;
+}
+
 /** Phase 3 v2: Three-way match (Invoice / Payment / Authority) */
 export interface ThreeWayMatch {
   invoice: {
     id: string;
     date: string;
+    /** Per-check pass + evidence (each links to PDF). */
+    checks?: InvoiceChecks;
+    /** Top-level summary – keep for backward compat and quick status. */
     payee_match: boolean;
     abn_valid: boolean;
     addressed_to_strata: boolean;
-    /** Forensic: Doc ID / page and context for Evidence Chain popover. */
+    /** Legacy forensic – fallback when checks absent. */
     evidence?: ExpenseEvidenceRef;
   };
   payment: {

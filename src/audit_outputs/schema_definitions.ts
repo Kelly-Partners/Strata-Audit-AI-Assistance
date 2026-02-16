@@ -137,11 +137,28 @@ const ExpenseEvidenceRefSchema = z.object({
   extracted_amount: z.number().optional(),
 });
 
+/** Invoice sub-check: passed + evidence per check. */
+const InvoiceCheckItemSchema = z.object({
+  passed: z.boolean(),
+  evidence: ExpenseEvidenceRefSchema.optional(),
+});
+
+/** Invoice checks – per-check pass + evidence for Forensic. */
+const InvoiceChecksSchema = z.object({
+  sp_number: InvoiceCheckItemSchema.optional(),
+  address: InvoiceCheckItemSchema.optional(),
+  amount: InvoiceCheckItemSchema.optional(),
+  gst_verified: InvoiceCheckItemSchema.optional(),
+  payee_match: InvoiceCheckItemSchema.optional(),
+  abn_valid: InvoiceCheckItemSchema.optional(),
+});
+
 /** Phase 3 v2: Three-way match */
 const ThreeWayMatchSchema = z.object({
   invoice: z.object({
     id: z.string(),
     date: z.string(),
+    checks: InvoiceChecksSchema.optional(),
     payee_match: z.boolean(),
     abn_valid: z.boolean(),
     addressed_to_strata: z.boolean(),
