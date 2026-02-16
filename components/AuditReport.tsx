@@ -880,7 +880,20 @@ export const AuditReport: React.FC<AuditReportProps> = ({
     }
   }, [focusTab, onFocusTabConsumed]);
   const [expenseForensic, setExpenseForensic] = useState<{ pillar: 'INV' | 'PAY' | 'FUND'; rowIndex: number; item: ExpenseSample } | null>(null);
-  
+
+  const [pyColumnVisible, setPyColumnVisible] = useState(() => {
+    try {
+      const v = localStorage.getItem("phase4-py-column-visible");
+      return v === null ? true : v === "true";
+    } catch { return true; }
+  });
+  const [pyColumnExpanded, setPyColumnExpanded] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem("phase4-py-column-visible", String(pyColumnVisible));
+    } catch { /* ignore */ }
+  }, [pyColumnVisible]);
+
   // ROBUST DEFAULTING to prevent crashes if JSON is partial or undefined
   const safeData: Partial<AuditResponse> = data || {};
   const docs = safeData.document_register || [];
@@ -1683,23 +1696,59 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <h3 className="text-heading font-bold text-black uppercase tracking-wide">Table C.3: Full Balance Sheet Verification (Phase 4 GATE 2)</h3>
                         <p className="text-caption text-gray-500 mt-1 uppercase tracking-wide">Owners Equity, Assets, Liabilities – line-by-line verification per ASSET_VERIFICATION_RULES. Current Year column only.</p>
                         <p className="text-label text-gray-400 mt-2 italic">BS Amount ($) = from Financial Statement Balance Sheet only; Supporting ($) = from R2–R5 evidence only (Bank Stmt, Levy Report, breakdown, GL).</p>
+                        {safeData.bs_extract?.rows?.length ? (
+                          <div className="mt-4 p-3 rounded bg-gray-50 border border-gray-200 inline-flex flex-wrap items-center gap-4">
+                            <span className="text-caption font-bold text-gray-600 uppercase tracking-wider">Prior Year</span>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={pyColumnVisible} onChange={(e) => setPyColumnVisible(e.target.checked)} className="rounded" />
+                              <span className="text-body text-gray-700">Show column</span>
+                            </label>
+                            {pyColumnVisible && (
+                              <button
+                                type="button"
+                                onClick={() => setPyColumnExpanded((v) => !v)}
+                                className="px-3 py-1.5 text-caption font-bold uppercase tracking-wider rounded bg-[#004F9F]/10 text-[#004F9F] hover:bg-[#004F9F]/20 transition-colors"
+                              >
+                                {pyColumnExpanded ? "▼ Collapse" : "▶ Expand"}
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
                     </div>
                     {data?.assets_and_cash?.balance_sheet_verification && data.assets_and_cash.balance_sheet_verification.length > 0 ? (
                         <div className="overflow-x-auto w-full">
-                            <table className="w-full table-fixed border-collapse border border-gray-200 text-right [&_td:nth-child(6)]:truncate [&_td:nth-child(1)]:sticky [&_td:nth-child(1)]:left-0 [&_td:nth-child(1)]:z-10 [&_td:nth-child(1)]:bg-white [&_td:nth-child(6)]:sticky [&_td:nth-child(6)]:right-0 [&_td:nth-child(6)]:z-10 [&_td:nth-child(6)]:bg-white">
+                            {(() => {
+                              const pyVisible = pyColumnVisible && !!(safeData.bs_extract?.rows?.length);
+                              const pyExpanded = pyColumnExpanded;
+                              const matchKey = (i: { line_item?: string; fund?: string; section?: string }) =>
+                                `${(i.line_item || "").trim()}|${(i.fund || "N/A")}|${(i.section || "ASSETS")}`;
+                              const bsRowMap = new Map(
+                                (safeData.bs_extract?.rows ?? []).map((r) => [matchKey(r), r])
+                              );
+                              const getPriorYear = (item: typeof data.assets_and_cash.balance_sheet_verification[0]) => {
+                                const row = bsRowMap.get(matchKey(item));
+                                if (!row || row.prior_year == null) return null;
+                                return { amount: row.prior_year, label: safeData.bs_extract?.prior_year_label || "Prior" };
+                              };
+                              return (
+                            <table className="w-full table-fixed border-collapse border border-gray-200 text-right [&_td:last-child]:truncate [&_td:nth-child(1)]:sticky [&_td:nth-child(1)]:left-0 [&_td:nth-child(1)]:z-10 [&_td:nth-child(1)]:bg-white [&_td:last-child]:sticky [&_td:last-child]:right-0 [&_td:last-child]:z-10">
                                 <colgroup>
-                                    <col style={{ width: "28%" }} />
-                                    <col style={{ width: "12%" }} />
-                                    <col style={{ width: "16%" }} />
-                                    <col style={{ width: "16%" }} />
-                                    <col style={{ width: "12%" }} />
-                                    <col style={{ width: "16%", maxWidth: "25%" }} />
+                                    <col style={{ width: pyVisible ? "24%" : "28%" }} />
+                                    <col style={{ width: "10%" }} />
+                                    <col style={{ width: "14%" }} />
+                                    {pyVisible && <col style={{ width: pyExpanded ? "12%" : "56px", minWidth: pyExpanded ? undefined : 56 }} />}
+                                    <col style={{ width: pyVisible ? "14%" : "16%" }} />
+                                    <col style={{ width: "10%" }} />
+                                    <col style={{ width: pyVisible ? "14%" : "16%", maxWidth: "25%" }} />
                                 </colgroup>
                                 <thead className="bg-gray-100 text-black uppercase font-bold text-heading-sm tracking-wider">
                                     <tr>
                                         <th className="px-5 py-4 text-left border-b border-gray-200 sticky left-0 z-10 bg-gray-100">Line Item</th>
                                         <th className="px-5 py-4 text-left border-b border-gray-200">Fund</th>
                                         <th className="px-5 py-4 text-right border-b border-gray-200">BS Amount ($)</th>
+                                        {pyVisible && (
+                                          <th className="px-2 py-4 text-right border-b border-gray-200 bg-gray-100">Prior Year</th>
+                                        )}
                                         <th className="px-5 py-4 text-right border-b border-gray-200">Supporting ($)</th>
                                         <th className="px-5 py-4 text-center border-b border-gray-200">Status</th>
                                         <th className="px-5 py-4 text-left border-b border-gray-200 pl-4 pr-3 sticky right-0 z-10 bg-gray-100">Note / Source</th>
@@ -1717,13 +1766,14 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                         });
                                         const uncategorized = items.filter((i) => !SECTION_ORDER.includes((i.section || 'ASSETS') as 'OWNERS_EQUITY' | 'ASSETS' | 'LIABILITIES'));
                                         if (uncategorized.length > 0) groups.push({ section: 'Other', items: uncategorized });
+                                        const colSpanTotal = pyVisible ? 7 : 6;
                                         const rows: React.ReactNode[] = [];
                                         let globalIdx = 0;
                                         groups.forEach(({ section, items: group }) => {
                                             const label = SECTION_LABELS[section] || section;
                                             rows.push(
                                                 <tr key={`h-${section}`} className="bg-gray-50/50">
-                                                    <td colSpan={6} className="px-5 py-3 text-left font-bold text-gray-800 uppercase text-body tracking-wide">{label}</td>
+                                                    <td colSpan={colSpanTotal} className="px-5 py-3 text-left font-bold text-gray-800 uppercase text-body tracking-wide">{label}</td>
                                                 </tr>
                                             );
                                             group.forEach((item) => {
@@ -1732,13 +1782,19 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                 const evParts = evRef.split(/[/,]/);
                                                 const srcId = evParts[0]?.trim() || '-';
                                                 const pageRef = evParts[1]?.trim() || evRef;
-                                                // BS Amount: source is Balance Sheet only – use Step 0 core_data_positions.balance_sheet + year_column when available
                                                 const bsDoc = safeData.core_data_positions?.balance_sheet;
                                                 const yearColumnLabel = item.year_column || safeData.bs_extract?.current_year_label || safeData.bs_column_mapping?.current_year_label || 'Current Year column';
                                                 const bsTrace: TraceableValue = bsDoc
                                                     ? { amount: item.bs_amount ?? 0, source_doc_id: bsDoc.doc_id, page_ref: `${bsDoc.page_range} › ${yearColumnLabel}`, note: item.note || `From BS column '${yearColumnLabel}'` }
                                                     : { amount: item.bs_amount ?? 0, source_doc_id: '-', page_ref: yearColumnLabel, note: item.note || `From BS column '${yearColumnLabel}' (BS not in register)` };
                                                 const supTrace: TraceableValue = { amount: item.supporting_amount ?? 0, source_doc_id: srcId, page_ref: pageRef, note: item.supporting_note || item.evidence_ref || '' };
+                                                const pyInfo = getPriorYear(item);
+                                                const pyLabel = safeData.bs_extract?.prior_year_label || 'Prior';
+                                                const pyTrace: TraceableValue | null = pyInfo && bsDoc
+                                                    ? { amount: pyInfo.amount, source_doc_id: bsDoc.doc_id, page_ref: `${bsDoc.page_range} › ${pyLabel}`, note: `From bs_extract prior_year (${item.line_item || ''})` }
+                                                    : pyInfo && !bsDoc
+                                                        ? { amount: pyInfo.amount, source_doc_id: '-', page_ref: pyLabel, note: `From bs_extract prior_year (BS not in register)` }
+                                                        : null;
                                                 const noteContent = item.supporting_note || item.evidence_ref || '–';
                                                 const isTotalOrSubtotal = item.status === 'SUBTOTAL_CHECK_ONLY' || /^(total|subtotal|net)\s|(total|subtotal)\s*$|^net\s+(assets|liabilities|equity)/i.test(item.line_item || '');
                                                 const rowClass = isTotalOrSubtotal ? 'group hover:bg-gray-100 border-t-2 border-gray-300 bg-gray-50/80' : 'group hover:bg-gray-50';
@@ -1749,6 +1805,21 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                         <td className={lineItemClass}>{item.line_item}</td>
                                                         <td className={`px-5 py-3 text-left text-gray-600 ${isTotalOrSubtotal ? 'font-semibold' : ''} ${cellBg}`}>{item.fund || '–'}</td>
                                                         <td className={`px-5 py-3 ${cellBg}`}><ForensicCell val={bsTrace} docs={docs} files={files} isBold={isTotalOrSubtotal} /></td>
+                                                        {pyVisible && (
+                                                          <td className={`px-2 py-3 ${cellBg}`}>
+                                                            {pyTrace ? (
+                                                              pyExpanded ? (
+                                                                <ForensicCell val={pyTrace} docs={docs} files={files} isBold={isTotalOrSubtotal} />
+                                                              ) : (
+                                                                <span title={`${pyLabel} | From bs_extract prior_year`} className="text-micro text-gray-600">
+                                                                  PY {pyTrace.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                </span>
+                                                              )
+                                                            ) : (
+                                                              <span className="text-gray-400">–</span>
+                                                            )}
+                                                          </td>
+                                                        )}
                                                         <td className={`px-5 py-3 ${cellBg}`}><ForensicCell val={supTrace} docs={docs} files={files} isBold={isTotalOrSubtotal} /></td>
                                                         <td className={`px-5 py-3 text-center ${cellBg}`}><StatusBadge status={item.status} /></td>
                                                         <td className={`px-5 py-3 text-left pl-4 pr-3 text-gray-400 italic text-body sticky right-0 z-10 ${cellBg}`}>
@@ -1762,6 +1833,8 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                     })()}
                                 </tbody>
                             </table>
+                            );
+                            })()}
                         </div>
                     ) : (
                         <div className="py-12 text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">

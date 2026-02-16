@@ -48,9 +48,11 @@ For each selected item, perform three checks and populate Three_Way_Match:
    - Invoice validity = PASS only if ALL available checks pass (sp_number, address, amount, gst_verified, payee_match, abn_valid). If any check fails, treat invoice as FAIL. Each check's evidence MUST include source_doc_id and page_ref for PDF link in Forensic popover.
 
 2. PAYMENT EVIDENCE (payment) – with checks (same granularity as invoice):
-   - **PAID** – TIER 1 ONLY: Search Bank Statement (document_register where Evidence_Tier = Tier 1) for the specific amount on/after the GL Date (allow ±14 days). IF FOUND in Bank -> status = "PAID", source_doc = Bank Statement ref. IF Bank Statement is missing or unreadable -> status = "BANK_STMT_MISSING" (do not use "MISSING").
-   - **ACCRUED** – TIER 2 ONLY: IF NOT in Bank -> Check Creditors/Accrued Expenses report (document_register where Evidence_Tier = Tier 2). If found -> status = "ACCRUED", creditors_ref = report ref.
+   - **PAID** – TIER 1 ONLY: Search Bank Statement (document_register where Evidence_Tier = Tier 1) for the specific amount on/after the GL Date (allow ±14 days). IF FOUND in Bank -> status = "PAID", source_doc = Bank Statement Doc_ID, bank_date = statement date.
+   - **ACCRUED** – TIER 2 ONLY: IF NOT in Bank -> Check Creditors/Accrued Expenses report (document_register where Evidence_Tier = Tier 2). If found -> status = "ACCRUED", creditors_ref = report Doc_ID/Page.
    - IF NOT in Bank AND NOT in Creditors -> status = "MISSING".
+   - IF Bank Statement exists but transaction not found or pages missing -> status = "BANK_STMT_MISSING".
+   - **MANDATORY TRACEABILITY:** For payment.checks.*.evidence, always set source_doc_id to the relevant Document_ID (Bank Statement or Creditors Report). Do NOT use "-" when a document exists. If transaction not found, set page_ref = "All" or searched page range and state why in note.
    - Do NOT use Tier 3 (GL, FS, Notes) as payment evidence.
 
    Populate payment.checks (each with passed: boolean + evidence: { source_doc_id, page_ref, note }) – each check links to Forensic/PDF:
