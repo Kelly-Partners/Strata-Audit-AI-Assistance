@@ -594,8 +594,17 @@ function buildExpenseForensicPayload(
     }
     case 'PAY': {
       const ev = pay?.evidence;
-      const { docId, pageRef } = ev?.source_doc_id ? { docId: ev.source_doc_id, pageRef: ev.page_ref || '' } : { docId: '–', pageRef: '' };
       const checks = pay?.checks;
+      let docId = ev?.source_doc_id ? ev.source_doc_id : '–';
+      let pageRef = ev?.page_ref || '';
+      if (docId === '–' && checks) {
+        const payCheckKeys = ['bank_account_match', 'payee_match', 'amount_match', 'date_match', 'duplicate_check', 'split_payment_check'] as const;
+        const firstWithEvidence = payCheckKeys.find((k) => checks[k]?.evidence?.source_doc_id);
+        if (firstWithEvidence && checks[firstWithEvidence].evidence?.source_doc_id) {
+          docId = checks[firstWithEvidence].evidence!.source_doc_id;
+          pageRef = checks[firstWithEvidence].evidence?.page_ref || pageRef;
+        }
+      }
       const PAY_CHECK_LABELS: Record<string, string> = {
         bank_account_match: 'Bank account (OC)',
         payee_match: 'Payee match',

@@ -91,13 +91,18 @@ exports.executeFullReview = onRequest(
           res.status(400).json({error: "Missing or empty systemPrompt in body"});
           return;
         }
-        if (typeof body.fileManifest !== "string") {
-          res.status(400).json({error: "Missing or invalid fileManifest in body"});
+        if (!Array.isArray(body.filePaths) || body.filePaths.length === 0) {
+          res.status(400).json({error: "Missing or invalid filePaths array in body"});
           return;
         }
-        if (!Array.isArray(body.files)) {
-          res.status(400).json({error: "Missing or invalid files array in body"});
-          return;
+
+        const isExpensesAdditional = body.mode === "expenses_additional";
+        if (isExpensesAdditional) {
+          const ar = body.additionalRunPaths;
+          if (!ar || typeof ar.runId !== "string" || !Array.isArray(ar.paths) || ar.paths.length === 0) {
+            res.status(400).json({error: "expenses_additional requires additionalRunPaths: { runId, paths }"});
+            return;
+          }
         }
 
         let apiKey = null;
@@ -112,11 +117,58 @@ exports.executeFullReview = onRequest(
           return;
         }
 
+        const basePaths = body.filePaths || [];
+        const addRunPaths = body.additionalRunPaths?.paths || [];
+        const allPaths = isExpensesAdditional ?
+          [...basePaths, ...addRunPaths] :
+          basePaths;
+
+        const bucket = admin.storage().bucket();
+        const files = [];
+        for (const p of allPaths) {
+          try {
+            const [buf] = await bucket.file(p).download();
+            const base64 = buf.toString("base64");
+            const ext = (p.split("/").pop() || "").toLowerCase();
+            let mimeType = "application/pdf";
+            if (ext.endsWith(".csv")) mimeType = "text/csv";
+            else if (ext.endsWith(".xlsx") || ext.endsWith(".xls")) {
+              mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            }
+            const name = p.split("/").pop() || "file";
+            files.push({name, data: base64, mimeType});
+          } catch (fetchErr) {
+            logger.warn("Storage fetch failed for " + p, fetchErr);
+          }
+        }
+        if (files.length === 0) {
+          res.status(400).json({error: "Could not fetch any files from Storage"});
+          return;
+        }
+
+        const fileMeta = body.fileMeta || [];
+        const effectiveMeta = isExpensesAdditional ?
+          [
+            ...(basePaths.map(() => ({batch: "initial"}))),
+            ...(addRunPaths.map(() => ({batch: "additional"}))),
+          ] :
+          fileMeta;
+        const buildManifest = (withAdditional) =>
+          files.map((f, i) => {
+            const meta = effectiveMeta[i];
+            const isAdd = withAdditional && meta && meta.batch === "additional";
+            const suffix = isAdd ?
+              " [ADDITIONAL]" :
+              "";
+            return `File Part ${i + 1}: ${f.name}${suffix}`;
+          }).join("\n");
+        const fileManifest = effectiveMeta.length === files.length ? buildManifest(true) : buildManifest(false);
+
         const result = await executeFullReview({
           apiKey,
           systemPrompt: body.systemPrompt,
-          fileManifest: body.fileManifest,
-          files: body.files || [],
+          fileManifest,
+          files,
           previousAudit: body.previousAudit,
           mode: body.mode || "full",
           aiAttemptTargets: body.aiAttemptTargets,

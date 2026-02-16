@@ -1,7 +1,7 @@
 /**
  * 步骤 7 - 前端调用 Cloud Function executeFullReview
  * URL 使用 VITE_FUNCTION_URL 或默认 australia-southeast1 的 Function URL；
- * 请求带 Authorization: Bearer <Firebase ID Token>，body 含 files、expectedPlanId 及 Function 所需字段。
+ * 请求带 Authorization: Bearer <Firebase ID Token>，body 含 filePaths（后端从 Storage 拉取文件）、expectedPlanId 等。
  */
 
 import {
@@ -28,19 +28,11 @@ function getFunctionUrl(): string {
   return (typeof envUrl === "string" && envUrl.trim() !== "") ? envUrl.trim() : DIRECT_FUNCTION_URL;
 }
 
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(",")[1] ?? "");
-    };
-    reader.onerror = (e) => reject(e);
-    reader.readAsDataURL(file);
-  });
-
 export interface CallExecuteFullReviewOptions {
-  files: File[];
+  /** Storage 路径数组，后端从 Storage 拉取文件 */
+  filePaths: string[];
+  /** expenses_additional 时必传：本次补充证据的 runId 与 paths */
+  additionalRunPaths?: { runId: string; paths: string[] };
   /** 可选：若 Cloud Function 已配置 Secret Manager 的 GEMINI_API_KEY，可不传 */
   apiKey?: string;
   previousAudit?: AuditResponse | null;
@@ -51,19 +43,20 @@ export interface CallExecuteFullReviewOptions {
   step0Output?: AuditResponse | null;
   /** aiAttempt 时必传：待重核项列表 */
   aiAttemptTargets?: AiAttemptTarget[];
-  /** aiAttempt 时可选：标记新增证据 [ADDITIONAL] */
+  /** aiAttempt 时可选：标记新增证据 [ADDITIONAL]，与 filePaths 一一对应 */
   fileMeta?: { batch: "initial" | "additional" }[];
 }
 
 /**
  * 调用 Cloud Function executeFullReview，返回审计结果。
- * 使用 Firebase ID Token 作为 Authorization: Bearer。
+ * 后端根据 filePaths 从 Storage 拉取文件，不再传 base64。
  */
 export async function callExecuteFullReview(
   options: CallExecuteFullReviewOptions
 ): Promise<AuditResponse> {
   const {
-    files,
+    filePaths,
+    additionalRunPaths,
     apiKey: apiKeyFromOptions,
     previousAudit,
     expectedPlanId,
@@ -77,20 +70,6 @@ export async function callExecuteFullReview(
     throw new Error("Please sign in to run the audit.");
   }
   const idToken = await user.getIdToken();
-
-  const fileManifest =
-    mode === "aiAttempt" && fileMeta?.length === files.length
-      ? files.map((f, i) => `File Part ${i + 1}: ${f.name}${fileMeta[i]?.batch === "additional" ? " [ADDITIONAL]" : ""}`).join("\n")
-      : files.map((f, i) => `File Part ${i + 1}: ${f.name}`).join("\n");
-  const filesPayload = await Promise.all(
-    files.map(async (file) => {
-      const data = await fileToBase64(file);
-      let mimeType = file.type || "";
-      if (!mimeType && file.name.toLowerCase().endsWith(".pdf")) mimeType = "application/pdf";
-      if (!mimeType && file.name.toLowerCase().endsWith(".csv")) mimeType = "text/csv";
-      return { name: file.name, data, mimeType: mimeType || "application/pdf" };
-    })
-  );
 
   const url = getFunctionUrl();
   const systemPrompt =
@@ -111,16 +90,17 @@ export async function callExecuteFullReview(
                     : buildSystemPrompt();
 
   const body = {
-    files: filesPayload,
+    filePaths,
+    ...(additionalRunPaths ? { additionalRunPaths } : {}),
     expectedPlanId,
     planId: expectedPlanId,
     userId: user.uid,
     ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
     systemPrompt,
-    fileManifest,
     previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "expenses_additional" || mode === "compliance" || mode === "aiAttempt" ? step0Output : previousAudit) ?? undefined,
     mode,
     aiAttemptTargets: mode === "aiAttempt" ? aiAttemptTargets : undefined,
+    ...(mode === "aiAttempt" && fileMeta?.length ? { fileMeta } : {}),
   };
 
   const res = await fetch(url, {

@@ -410,7 +410,7 @@ const App: React.FC = () => {
       filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files!);
       const runPhase = (phase: "levy" | "phase4" | "expenses" | "compliance") =>
         callExecuteFullReview({
-          files: targetPlan.files,
+          filePaths,
           expectedPlanId: planId,
           mode: phase,
           step0Output: step0,
@@ -504,7 +504,7 @@ const App: React.FC = () => {
       filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
       updatePlan(planId, { filePaths });
       const res = await callExecuteFullReview({
-        files: targetPlan.files,
+        filePaths,
         expectedPlanId: planId,
         mode: "aiAttempt",
         step0Output: mergedSoFar,
@@ -591,13 +591,14 @@ const App: React.FC = () => {
     const baseDoc = { userId: userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
     const runId = crypto.randomUUID();
     try {
-      const filePaths = await uploadAdditionalRunFiles(storage, userId, planId, runId, newFiles);
+      const additionalPaths = await uploadAdditionalRunFiles(storage, userId, planId, runId, newFiles);
       const step0WithEffective = {
         ...mergedSoFar,
         expense_samples: getEffectiveExpenseSamples(mergedSoFar),
       };
       const res = await callExecuteFullReview({
-        files: newFiles,
+        filePaths: targetPlan.filePaths ?? [],
+        additionalRunPaths: { runId, paths: additionalPaths },
         expectedPlanId: planId,
         mode: "expenses_additional",
         step0Output: step0WithEffective,
@@ -612,7 +613,7 @@ const App: React.FC = () => {
         run_id: runId,
         run_type: "additional",
         created_at: new Date().toISOString(),
-        file_paths: filePaths,
+        file_paths: additionalPaths,
         document_ids: [...new Set(newDocIds)],
         expense_samples: samplesAdditional,
       };
@@ -622,7 +623,7 @@ const App: React.FC = () => {
         document_register: mergedDocRegister,
         expense_runs: updatedRuns,
       };
-      const runMeta = { run_id: runId, file_paths: filePaths, created_at: Date.now() };
+      const runMeta = { run_id: runId, file_paths: additionalPaths, created_at: Date.now() };
       const nextAdditionalRuns = [...(targetPlan.additional_runs ?? []), runMeta];
       await savePlanToFirestore(db, planId, {
         ...baseDoc,
@@ -664,7 +665,7 @@ const App: React.FC = () => {
     try {
       filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
       const auditResult = await callExecuteFullReview({
-        files: targetPlan.files,
+        filePaths,
         expectedPlanId: planId,
         mode: 'step0_only',
       });
@@ -720,7 +721,7 @@ const App: React.FC = () => {
 
       // 2) 调用 Cloud Function 执行审计
       const auditResult = await callExecuteFullReview({
-        files: targetPlan.files,
+        filePaths,
         previousAudit: targetPlan.result ?? undefined,
         expectedPlanId: planId,
       });

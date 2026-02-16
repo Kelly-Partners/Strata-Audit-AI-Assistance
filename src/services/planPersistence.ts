@@ -188,7 +188,18 @@ export async function loadPlanFilesFromStorage(
 }
 
 /**
- * 删除 Storage 中该计划目录下的所有文件：users/{userId}/plans/{planId}/
+ * Recursively delete all files under a Storage reference (including additional/run_xxx/ subfolders).
+ */
+async function deleteFolderRecursive(
+  storageRef: ReturnType<typeof ref>
+): Promise<void> {
+  const listResult = await listAll(storageRef);
+  await Promise.all(listResult.items.map((itemRef) => deleteObject(itemRef)));
+  await Promise.all(listResult.prefixes.map((prefixRef) => deleteFolderRecursive(prefixRef)));
+}
+
+/**
+ * 删除 Storage 中该计划目录下的所有文件（含 additional/run_xxx/ 子目录）：users/{userId}/plans/{planId}/
  */
 export async function deletePlanFilesFromStorage(
   storageInstance: FirebaseStorage,
@@ -196,8 +207,7 @@ export async function deletePlanFilesFromStorage(
   planId: string
 ): Promise<void> {
   const folderRef = ref(storageInstance, `users/${userId}/plans/${planId}`);
-  const listResult = await listAll(folderRef);
-  await Promise.all(listResult.items.map((itemRef) => deleteObject(itemRef)));
+  await deleteFolderRecursive(folderRef);
 }
 
 /**
