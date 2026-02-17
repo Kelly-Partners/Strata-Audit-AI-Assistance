@@ -1,5 +1,16 @@
+# ============================================================
+# Frontend (Node / Vite / React)
+# ============================================================
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,23 +18,78 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Environment (勿提交含密钥的文件)
+# ============================================================
+# Environment & Secrets
+# ============================================================
 .env
 .env.local
 .env.*.local
+*.local
 
-# Editor directories and files
+# ============================================================
+# .NET / Azure Functions
+# ============================================================
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+
+# NuGet
+*.nupkg
+**/packages/
+*.nuget.props
+*.nuget.targets
+
+# Azure Functions local settings (contains secrets)
+StrataAudit.Functions/local.settings.json
+
+# .NET build artifacts
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ============================================================
+# IDE / Editor
+# ============================================================
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
+!.vscode/settings.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*.sw?
 *.ntvs*
 *.njsproj
-*.sln
-*.sw?
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ============================================================
+# Azure
+# ============================================================
+.azure/
+appsettings.Development.json
+
+# ============================================================
+# Misc
+# ============================================================
+*.tgz
+.temp/
+.tmp/
+coverage/

@@ -11,8 +11,8 @@
     "generate-schema": "tsx scripts/generate-audit-schema.ts"
   },
   "dependencies": {
-    "@google/genai": "^1.38.0",
-    "firebase": "^12.8.0",
+    "@azure/msal-browser": "^4.4.0",
+    "@monaco-editor/react": "^4.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"

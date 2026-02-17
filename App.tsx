@@ -4,13 +4,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
-import { callExecuteFullReview } from './services/gemini';
+import { callExecuteFullReview } from './services/auditApi';
 import { mergeAiAttemptUpdates } from './services/mergeAiAttemptUpdates';
 import { buildAiAttemptTargets } from './src/audit_engine/ai_attempt_targets';
-import { auth, db, storage, hasValidFirebaseConfig } from './services/firebase';
-import { uploadPlanFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore, getPlansFromFirestore, loadPlanFilesFromStorage } from './services/planPersistence';
-import type { User } from 'firebase/auth';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import {
+  hasValidAzureAuthConfig,
+  initializeMsal,
+  onAuthStateChanged as msalOnAuthStateChanged,
+  signInWithPopup as msalSignInWithPopup,
+  signOutUser,
+  toAzureUser,
+} from './services/azure-auth';
+import type { AzureUser } from './services/azure-auth';
+import { uploadPlanFiles, loadPlanFilesFromStorage, deletePlanFilesFromStorage } from './services/azure-storage';
+import { savePlanToCosmosDB, getPlansFromCosmosDB, deletePlanFromCosmosDB } from './services/azure-cosmos';
 import { Plan, PlanStatus, TriageItem, FileMetaEntry } from './types';
 
 /** Reconcile fileMeta when files change: keep meta for kept files, add 'additional' for new files */
@@ -32,7 +39,7 @@ const App: React.FC = () => {
   // Global App State
   const [plans, setPlans] = useState<Plan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [azureUser, setAzureUser] = useState<AzureUser | null>(null);
 
   // UI State: Create modal only for initial plan creation
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -41,27 +48,28 @@ const App: React.FC = () => {
   const [createDraft, setCreateDraft] = useState<{ name: string; files: File[] }>({ name: "", files: [] });
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
-  // Login page state (参考 strata-tax-review-assistance 登录结构)
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  // Login page state
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setFirebaseUser(u));
-    return () => unsub();
+    let unsub: (() => void) | undefined;
+    (async () => {
+      await initializeMsal();
+      unsub = msalOnAuthStateChanged((account) => setAzureUser(toAzureUser(account)));
+    })();
+    return () => { if (unsub) unsub(); };
   }, []);
 
-  // Load plans from Firestore when user logs in (persistence across refresh)
+  // Load plans from Cosmos DB when user logs in (persistence across refresh)
   useEffect(() => {
-    if (!firebaseUser || !hasValidFirebaseConfig) return;
+    if (!azureUser || !hasValidAzureAuthConfig) return;
     let cancelled = false;
     (async () => {
       try {
-        const firestorePlans = await getPlansFromFirestore(db, firebaseUser.uid);
+        const cosmosPlans = await getPlansFromCosmosDB(azureUser.uid);
         if (cancelled) return;
-        const mapped: Plan[] = firestorePlans.map((p) => ({
+        const mapped: Plan[] = cosmosPlans.map((p) => ({
           id: p.id,
           name: p.name,
           createdAt: p.createdAt,
@@ -75,22 +83,22 @@ const App: React.FC = () => {
         }));
         setPlans(mapped);
       } catch (err) {
-        if (!cancelled) console.warn('Failed to load plans from Firestore:', err);
+        if (!cancelled) console.warn('Failed to load plans:', err);
       }
     })();
     return () => { cancelled = true; };
-  }, [firebaseUser?.uid, hasValidFirebaseConfig]);
+  }, [azureUser?.uid, hasValidAzureAuthConfig]);
 
   // Derived Active Plan（必须在引用它的 useEffect 之前声明，避免 TDZ 错误）
   const activePlan = plans.find(p => p.id === activePlanId) || null;
 
   // Load files from Storage when user selects a plan that has filePaths but no local files (e.g. after refresh)
   useEffect(() => {
-    if (!firebaseUser || !activePlan?.filePaths?.length || activePlan.files.length > 0) return;
+    if (!azureUser || !activePlan?.filePaths?.length || activePlan.files.length > 0) return;
     let cancelled = false;
     (async () => {
       try {
-        const loaded = await loadPlanFilesFromStorage(storage, activePlan.filePaths!);
+        const loaded = await loadPlanFilesFromStorage(activePlan.filePaths!);
         if (!cancelled && loaded.length > 0) {
           const meta = activePlan.fileMeta && activePlan.fileMeta.length === loaded.length
             ? activePlan.fileMeta
@@ -102,7 +110,7 @@ const App: React.FC = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [firebaseUser?.uid, activePlanId, activePlan?.id, activePlan?.filePaths?.length, activePlan?.files.length]);
+  }, [azureUser?.uid, activePlanId, activePlan?.id, activePlan?.filePaths?.length, activePlan?.files.length]);
 
   // --- PLAN MANAGEMENT HELPERS ---
 
@@ -123,24 +131,24 @@ const App: React.FC = () => {
 
   const handleCreatePlanConfirm = async () => {
     const { name, files } = createDraft;
-    if (!firebaseUser || files.length === 0) return;
+    if (!azureUser || files.length === 0) return;
     const planName = name.trim() || files[0]?.name.split('.')[0] || `Audit Plan ${plans.length + 1}`;
     const createdAt = Date.now();
     const id = createPlan(files, planName);
     setIsCreateModalOpen(false);
     setCreateDraft({ name: "", files: [] });
     setActivePlanId(id);
-    await savePlanToFirestore(db, id, {
-      userId: firebaseUser.uid,
+    await savePlanToCosmosDB(id, {
+      userId: azureUser.uid,
       name: planName,
       createdAt,
       status: "idle",
     });
     try {
-      const filePaths = await uploadPlanFiles(storage, firebaseUser.uid, id, files);
+      const filePaths = await uploadPlanFiles(azureUser.uid, id, files);
       const fileMeta: FileMetaEntry[] = files.map(() => ({ uploadedAt: Date.now(), batch: "initial" }));
-      await savePlanToFirestore(db, id, {
-        userId: firebaseUser.uid,
+      await savePlanToCosmosDB(id, {
+        userId: azureUser.uid,
         name: planName,
         createdAt,
         status: "idle",
@@ -159,14 +167,14 @@ const App: React.FC = () => {
 
   const deletePlan = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (firebaseUser) {
+    if (azureUser) {
       try {
-        await deletePlanFilesFromStorage(storage, firebaseUser.uid, id);
+        await deletePlanFilesFromStorage(azureUser.uid, id);
       } catch (_) {
         // 目录不存在或已空时忽略
       }
       try {
-        await deletePlanFromFirestore(db, id);
+        await deletePlanFromCosmosDB(id, azureUser.uid);
       } catch (_) {
         // 文档不存在时忽略
       }
@@ -224,7 +232,7 @@ const App: React.FC = () => {
   const handleRunCall2 = async (planId: string) => {
     const targetPlan = plans.find((p) => p.id === planId);
     if (!targetPlan) return;
-    if (!firebaseUser) {
+    if (!azureUser) {
       updatePlan(planId, { error: "请先登录后再执行审计。" });
       return;
     }
@@ -239,11 +247,11 @@ const App: React.FC = () => {
     }
     updatePlan(planId, { status: "processing", error: null });
     setIsCreateModalOpen(false);
-    const userId = firebaseUser.uid;
+    const userId = azureUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
     let filePaths: string[] = [];
     try {
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files!);
+      filePaths = await uploadPlanFiles(userId, planId, targetPlan.files!);
       const runPhase = (phase: "levy" | "phase4" | "expenses" | "compliance") =>
         callExecuteFullReview({
           files: targetPlan.files,
@@ -264,7 +272,7 @@ const App: React.FC = () => {
         expense_samples: expensesRes.expense_samples,
         statutory_compliance: complianceRes.statutory_compliance,
       };
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: "completed",
         filePaths,
@@ -279,7 +287,7 @@ const App: React.FC = () => {
       );
     } catch (err: unknown) {
       const errMessage = (err as Error)?.message || "Call 2 Failed";
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: "failed",
         ...(filePaths.length > 0 ? { filePaths } : {}),
@@ -297,7 +305,7 @@ const App: React.FC = () => {
   const handleRunAiAttempt = async (planId: string) => {
     const targetPlan = plans.find((p) => p.id === planId);
     if (!targetPlan) return;
-    if (!firebaseUser) {
+    if (!azureUser) {
       updatePlan(planId, { error: "请先登录后再执行审计。" });
       return;
     }
@@ -325,7 +333,7 @@ const App: React.FC = () => {
     }
     updatePlan(planId, { status: "processing", error: null });
     setIsCreateModalOpen(false);
-    const userId = firebaseUser.uid;
+    const userId = azureUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
     try {
       const res = await callExecuteFullReview({
@@ -352,7 +360,7 @@ const App: React.FC = () => {
         }));
       }
       setFocusTabAfterAction("aiAttempt");
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: "completed",
         filePaths: targetPlan.filePaths ?? [],
@@ -367,7 +375,7 @@ const App: React.FC = () => {
       );
     } catch (err: unknown) {
       const errMessage = (err as Error)?.message || "AI Attempt Failed";
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: "failed",
         filePaths: targetPlan.filePaths ?? [],
@@ -385,7 +393,7 @@ const App: React.FC = () => {
   const handleRunPhase6 = async (planId: string) => {
     const targetPlan = plans.find((p) => p.id === planId);
     if (!targetPlan) return;
-    if (!firebaseUser) {
+    if (!azureUser) {
       updatePlan(planId, { error: "请先登录后再执行审计。" });
       return;
     }
@@ -408,7 +416,7 @@ const App: React.FC = () => {
     }
     updatePlan(planId, { status: "processing", error: null });
     setIsCreateModalOpen(false);
-    const userId = firebaseUser.uid;
+    const userId = azureUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
     try {
       const completionRes = await callExecuteFullReview({
@@ -418,7 +426,7 @@ const App: React.FC = () => {
         step0Output: mergedSoFar,
       });
       const finalMerged = { ...mergedSoFar, completion_outputs: completionRes.completion_outputs };
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: "completed",
         filePaths: targetPlan.filePaths ?? [],
@@ -433,7 +441,7 @@ const App: React.FC = () => {
       );
     } catch (err: unknown) {
       const errMessage = (err as Error)?.message || "Phase 6 Failed";
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: "failed",
         filePaths: targetPlan.filePaths ?? [],
@@ -451,7 +459,7 @@ const App: React.FC = () => {
   const handleRunStep0Only = async (planId: string) => {
     const targetPlan = plans.find(p => p.id === planId);
     if (!targetPlan) return;
-    if (!firebaseUser) {
+    if (!azureUser) {
       updatePlan(planId, { error: "请先登录后再执行审计。" });
       return;
     }
@@ -461,17 +469,17 @@ const App: React.FC = () => {
     }
     updatePlan(planId, { status: 'processing', error: null });
     setIsCreateModalOpen(false);
-    const userId = firebaseUser.uid;
+    const userId = azureUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
     let filePaths: string[] = [];
     try {
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+      filePaths = await uploadPlanFiles(userId, planId, targetPlan.files);
       const auditResult = await callExecuteFullReview({
         files: targetPlan.files,
         expectedPlanId: planId,
         mode: 'step0_only',
       });
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: 'completed',
         filePaths,
@@ -482,7 +490,7 @@ const App: React.FC = () => {
       setPlans(prev => prev.map(p => p.id === planId ? { ...p, status: 'completed' as const, result: auditResult } : p));
     } catch (err: unknown) {
       const errMessage = (err as Error)?.message || "Execution Failed";
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: 'failed',
         ...(filePaths.length > 0 ? { filePaths } : {}),
@@ -497,7 +505,7 @@ const App: React.FC = () => {
     const targetPlan = plans.find(p => p.id === planId);
     if (!targetPlan) return;
 
-    if (!firebaseUser) {
+    if (!azureUser) {
       updatePlan(planId, { error: "请先登录后再执行审计。" });
       return;
     }
@@ -509,7 +517,7 @@ const App: React.FC = () => {
     updatePlan(planId, { status: 'processing', error: null });
     setIsCreateModalOpen(false);
 
-    const userId = firebaseUser.uid;
+    const userId = azureUser.uid;
     const baseDoc = {
       userId,
       name: targetPlan.name,
@@ -519,7 +527,7 @@ const App: React.FC = () => {
 
     try {
       // 1) 上传文件到 Storage：users/{userId}/plans/{planId}/{fileName}
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+      filePaths = await uploadPlanFiles(userId, planId, targetPlan.files);
 
       // 2) 调用 Cloud Function 执行审计
       const auditResult = await callExecuteFullReview({
@@ -528,8 +536,8 @@ const App: React.FC = () => {
         expectedPlanId: planId,
       });
 
-      // 3) 将 AI 结果与 filePaths 写入 Firestore
-      await savePlanToFirestore(db, planId, {
+      // 3) 将 AI 结果与 filePaths 写入 Cosmos DB
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: 'completed',
         filePaths,
@@ -547,7 +555,7 @@ const App: React.FC = () => {
       });
     } catch (err: any) {
       const errMessage = err?.message || "Execution Failed";
-      await savePlanToFirestore(db, planId, {
+      await savePlanToCosmosDB(planId, {
         ...baseDoc,
         status: 'failed',
         ...(filePaths.length > 0 ? { filePaths } : {}),
@@ -623,45 +631,24 @@ const App: React.FC = () => {
   // Helper to get triage counts
   const getTriageCount = (severity: string) => activePlan?.triage.filter(t => t.severity === severity).length || 0;
 
-  // --- 登录门控：未登录时显示登录页（风格对齐 strata-tax-review-assistance） ---
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleMicrosoftSignIn = async () => {
     setAuthError('');
-    if (!loginEmail.trim() || !loginPassword) {
-      setAuthError(isSignUp ? '请输入邮箱与密码以注册' : '请输入邮箱与密码');
-      return;
-    }
     setAuthLoading(true);
     try {
-      if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
-      } else {
-        await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPassword);
-      }
+      const account = await msalSignInWithPopup();
+      setAzureUser(toAzureUser(account));
     } catch (err: any) {
-      setAuthError(err?.message || (isSignUp ? '注册失败' : '登录失败'));
+      setAuthError(err?.message || 'Microsoft sign-in failed');
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setAuthError('');
-    setAuthLoading(true);
-    try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    } catch (err: any) {
-      setAuthError(err?.message || 'Google 登录失败');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  if (!firebaseUser) {
+  if (!azureUser) {
     return (
       <div className="flex h-screen bg-[#111] text-white font-sans items-center justify-center p-4">
         <div className="w-full max-w-[400px]">
-          {/* Brand：与侧栏一致 */}
+          {/* Brand */}
           <div className="flex items-center gap-3 justify-center mb-10">
             <div className="h-10 w-10 bg-[#C5A059] flex items-center justify-center font-bold text-black rounded-sm shrink-0 text-lg">S</div>
             <div className="text-left">
@@ -670,9 +657,9 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {!hasValidFirebaseConfig && (
+          {!hasValidAzureAuthConfig && (
             <div className="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-sm text-amber-200 text-xs uppercase tracking-wide">
-              未检测到 Firebase 配置。请在项目根目录 .env 中填写 VITE_FIREBASE_* 后执行 npm run build 并重新部署。
+              Azure AD not configured. Set VITE_AZURE_AD_CLIENT_ID and VITE_AZURE_AD_TENANT_ID in .env then rebuild and redeploy.
             </div>
           )}
 
@@ -680,67 +667,23 @@ const App: React.FC = () => {
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-sm p-8 shadow-xl">
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">Sign In</h2>
 
-            <form onSubmit={handleEmailAuth} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Email</label>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => { setLoginEmail(e.target.value); setAuthError(''); }}
-                  placeholder="your@email.com"
-                  className="w-full px-4 py-3 bg-[#0d0d0d] border border-gray-700 rounded-sm text-sm text-white placeholder-gray-500 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Password</label>
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => { setLoginPassword(e.target.value); setAuthError(''); }}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-[#0d0d0d] border border-gray-700 rounded-sm text-sm text-white placeholder-gray-500 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] focus:outline-none transition-colors"
-                />
-              </div>
-              {authError && (
-                <p className="text-[11px] text-red-400 font-medium">{authError}</p>
-              )}
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full bg-[#C5A059] hover:bg-[#A08040] disabled:opacity-50 text-black font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-xs transition-colors"
-              >
-                {authLoading ? '…' : isSignUp ? 'Create Account' : 'Sign In'}
-              </button>
-            </form>
+            {authError && (
+              <p className="text-[11px] text-red-400 font-medium mb-4">{authError}</p>
+            )}
 
             <button
               type="button"
-              onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
-              className="mt-3 text-[11px] text-gray-500 hover:text-[#C5A059] transition-colors uppercase tracking-wide"
-            >
-              {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Create one'}
-            </button>
-
-            <div className="flex items-center gap-4 my-6">
-              <div className="flex-1 h-px bg-gray-800" />
-              <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">or</span>
-              <div className="flex-1 h-px bg-gray-800" />
-            </div>
-
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
+              onClick={handleMicrosoftSignIn}
               disabled={authLoading}
-              className="w-full border border-gray-600 hover:border-[#C5A059] text-gray-300 hover:text-white font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-[#C5A059] hover:bg-[#A08040] disabled:opacity-50 text-black font-bold py-3 px-6 rounded-sm uppercase tracking-wider text-xs transition-colors flex items-center justify-center gap-2"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-              Sign in with Google
+              <svg className="w-5 h-5" viewBox="0 0 23 23"><path fill="#f25022" d="M1 1h10v10H1z"/><path fill="#00a4ef" d="M1 12h10v10H1z"/><path fill="#7fba00" d="M12 1h10v10H12z"/><path fill="#ffb900" d="M12 12h10v10H12z"/></svg>
+              {authLoading ? 'Signing in…' : 'Sign in with Microsoft'}
             </button>
           </div>
 
           <p className="mt-6 text-[10px] text-gray-600 text-center uppercase tracking-wide">
-            Enable Email/Password and Google in Firebase Console → Authentication before first use.
-            {!hasValidFirebaseConfig && ' 若页面空白，请确认部署前 .env 已配置 VITE_FIREBASE_* 并重新 build 后部署。'}
+            Authenticate with your organization's Microsoft account.
           </p>
         </div>
       </div>
@@ -908,17 +851,17 @@ const App: React.FC = () => {
            >
               <span>+</span> New Plan
            </button>
-           {firebaseUser ? (
+           {azureUser ? (
              <div className="mb-4 space-y-2">
-               <div className="text-sm text-gray-500 truncate" title={firebaseUser.email ?? undefined}>{firebaseUser.email ?? firebaseUser.uid}</div>
-               <button onClick={() => signOut(auth)} className="w-full border border-gray-700 hover:border-red-500 text-gray-400 hover:text-red-400 py-1.5 rounded-sm transition-colors text-sm font-semibold">Sign Out</button>
+               <div className="text-sm text-gray-500 truncate" title={azureUser.email ?? undefined}>{azureUser.email ?? azureUser.uid}</div>
+               <button onClick={() => signOutUser()} className="w-full border border-gray-700 hover:border-red-500 text-gray-400 hover:text-red-400 py-1.5 rounded-sm transition-colors text-sm font-semibold">Sign Out</button>
              </div>
            ) : (
-             <button onClick={async () => { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { console.error('Sign in failed', e); } }} className="w-full mb-4 border border-[#C5A059] text-[#C5A059] hover:bg-[#C5A059] hover:text-black py-2 rounded-sm transition-colors text-sm font-semibold">Sign in (Cloud Engine)</button>
+             <button onClick={async () => { try { const account = await msalSignInWithPopup(); setAzureUser(toAzureUser(account)); } catch (e) { console.error('Sign in failed', e); } }} className="w-full mb-4 border border-[#C5A059] text-[#C5A059] hover:bg-[#C5A059] hover:text-black py-2 rounded-sm transition-colors text-sm font-semibold">Sign in (Cloud Engine)</button>
            )}
            <div className="flex justify-between">
               <span>Kernel v2.0</span>
-              <span className={firebaseUser ? "text-green-600" : "text-gray-600"}>{firebaseUser ? "Cloud Ready" : "请先登录"}</span>
+              <span className={azureUser ? "text-green-600" : "text-gray-600"}>{azureUser ? "Cloud Ready" : "请先登录"}</span>
            </div>
         </div>
       </aside>
@@ -1029,7 +972,7 @@ const App: React.FC = () => {
                    <button
                      onClick={() => handleNextStep(activePlan.id)}
                      disabled={
-                       !firebaseUser ||
+                       !azureUser ||
                        activePlan.files.length === 0 ||
                        activePlan.status === "processing" ||
                        (getNextStep(activePlan) === "call2" && !activePlan.result?.document_register?.length) ||
@@ -1037,7 +980,7 @@ const App: React.FC = () => {
                        (getNextStep(activePlan) === "aiAttempt" && buildAiAttemptTargets(activePlan.result ?? null, activePlan.triage).length === 0)
                      }
                      className={`px-6 py-3 font-bold text-xs uppercase tracking-widest rounded-sm border-2 transition-all focus:outline-none ${
-                       !firebaseUser ||
+                       !azureUser ||
                        activePlan.files.length === 0 ||
                        activePlan.status === "processing" ||
                        (getNextStep(activePlan) === "call2" && !activePlan.result?.document_register?.length) ||
@@ -1054,12 +997,12 @@ const App: React.FC = () => {
                      <button
                        onClick={() => handleRunPhase6(activePlan.id)}
                        disabled={
-                         !firebaseUser ||
+                         !azureUser ||
                          activePlan.files.length === 0 ||
                          activePlan.status === "processing"
                        }
                        className={`px-6 py-3 font-bold text-xs uppercase tracking-widest rounded-sm border-2 transition-all focus:outline-none ${
-                         !firebaseUser || activePlan.files.length === 0 || activePlan.status === "processing"
+                         !azureUser || activePlan.files.length === 0 || activePlan.status === "processing"
                            ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
                            : "bg-[#2d5a27] border-[#2d5a27] text-white hover:bg-[#234a20] hover:border-[#234a20]"
                        }`}
@@ -1184,7 +1127,7 @@ const App: React.FC = () => {
               </button>
               <button
                 onClick={handleCreatePlanConfirm}
-                disabled={!firebaseUser || createDraft.files.length === 0}
+                disabled={!azureUser || createDraft.files.length === 0}
                 className="px-8 py-3 font-bold text-xs uppercase tracking-widest rounded-sm bg-[#C5A059] text-black hover:bg-[#A08040] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Create & Open

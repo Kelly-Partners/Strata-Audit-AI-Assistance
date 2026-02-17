@@ -1,7 +1,11 @@
 /**
- * 步骤 7 - 前端调用 Cloud Function executeFullReview
- * URL 使用 VITE_FUNCTION_URL 或默认 australia-southeast1 的 Function URL；
- * 请求带 Authorization: Bearer <Firebase ID Token>，body 含 files、expectedPlanId 及 Function 所需字段。
+ * Azure audit API client - replaces src/services/gemini.ts
+ * Calls the Azure Function executeFullReview endpoint.
+ *
+ * The request/response contract is identical to the Firebase Cloud Function version:
+ * POST { files, systemPrompt, fileManifest, previousAudit, mode } → AuditResponse JSON
+ *
+ * Uses MSAL access token for Authorization header (replaces Firebase ID token).
  */
 
 import {
@@ -16,16 +20,12 @@ import {
 } from "../audit_engine";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
 import type { AiAttemptTarget } from "../audit_engine/ai_attempt_targets";
-import { auth } from "./firebase";
+import { getAccessToken } from "./azure-auth";
+import { getApiBaseUrl } from "./api-client";
 
-const PROJECT_ID = "strata-audit-ai-reviewer";
-const DIRECT_FUNCTION_URL =
-  `https://australia-southeast1-${PROJECT_ID}.cloudfunctions.net/executeFullReview`;
-
-/** 始终用直连 URL：Hosting rewrite 有 ~60s 超时，会导致 503 first byte timeout；直连可支持 9 分钟 */
 function getFunctionUrl(): string {
-  const envUrl = import.meta.env.VITE_FUNCTION_URL;
-  return (typeof envUrl === "string" && envUrl.trim() !== "") ? envUrl.trim() : DIRECT_FUNCTION_URL;
+  const base = getApiBaseUrl();
+  return `${base}/api/executeFullReview`;
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -41,30 +41,31 @@ const fileToBase64 = (file: File): Promise<string> =>
 
 export interface CallExecuteFullReviewOptions {
   files: File[];
-  /** 可选：若 Cloud Function 已配置 Secret Manager 的 GEMINI_API_KEY，可不传 */
-  apiKey?: string;
   previousAudit?: AuditResponse | null;
   expectedPlanId?: string;
-  /** step0_only: 仅 Step 0；levy|phase4|expenses|compliance|completion|aiAttempt: Call 2 单阶段（需 step0Output）；full: 完整审计（默认） */
-  mode?: "step0_only" | "levy" | "phase4" | "expenses" | "compliance" | "completion" | "aiAttempt" | "full";
-  /** Call 2 时必传：Step 0 输出，作为 LOCKED 上下文注入 */
+  mode?:
+    | "step0_only"
+    | "levy"
+    | "phase4"
+    | "expenses"
+    | "compliance"
+    | "completion"
+    | "aiAttempt"
+    | "full";
   step0Output?: AuditResponse | null;
-  /** aiAttempt 时必传：待重核项列表 */
   aiAttemptTargets?: AiAttemptTarget[];
-  /** aiAttempt 时可选：标记新增证据 [ADDITIONAL] */
   fileMeta?: { batch: "initial" | "additional" }[];
 }
 
 /**
- * 调用 Cloud Function executeFullReview，返回审计结果。
- * 使用 Firebase ID Token 作为 Authorization: Bearer。
+ * Call the Azure Function executeFullReview endpoint.
+ * Uses MSAL access token for auth (replaces Firebase ID token).
  */
 export async function callExecuteFullReview(
   options: CallExecuteFullReviewOptions
 ): Promise<AuditResponse> {
   const {
     files,
-    apiKey: apiKeyFromOptions,
     previousAudit,
     expectedPlanId,
     mode = "full",
@@ -72,23 +73,33 @@ export async function callExecuteFullReview(
     aiAttemptTargets = [],
     fileMeta,
   } = options;
-  const user = auth.currentUser;
-  if (!user) {
-    throw new Error("请先登录后再执行审计。");
-  }
-  const idToken = await user.getIdToken();
+
+  // Get MSAL access token (replaces Firebase getIdToken)
+  const accessToken = await getAccessToken();
 
   const fileManifest =
     mode === "aiAttempt" && fileMeta?.length === files.length
-      ? files.map((f, i) => `File Part ${i + 1}: ${f.name}${fileMeta[i]?.batch === "additional" ? " [ADDITIONAL]" : ""}`).join("\n")
+      ? files
+          .map(
+            (f, i) =>
+              `File Part ${i + 1}: ${f.name}${fileMeta[i]?.batch === "additional" ? " [ADDITIONAL]" : ""}`
+          )
+          .join("\n")
       : files.map((f, i) => `File Part ${i + 1}: ${f.name}`).join("\n");
+
   const filesPayload = await Promise.all(
     files.map(async (file) => {
       const data = await fileToBase64(file);
       let mimeType = file.type || "";
-      if (!mimeType && file.name.toLowerCase().endsWith(".pdf")) mimeType = "application/pdf";
-      if (!mimeType && file.name.toLowerCase().endsWith(".csv")) mimeType = "text/csv";
-      return { name: file.name, data, mimeType: mimeType || "application/pdf" };
+      if (!mimeType && file.name.toLowerCase().endsWith(".pdf"))
+        mimeType = "application/pdf";
+      if (!mimeType && file.name.toLowerCase().endsWith(".csv"))
+        mimeType = "text/csv";
+      return {
+        name: file.name,
+        data,
+        mimeType: mimeType || "application/pdf",
+      };
     })
   );
 
@@ -113,10 +124,17 @@ export async function callExecuteFullReview(
   const body = {
     files: filesPayload,
     expectedPlanId,
-    ...(apiKeyFromOptions ? {apiKey: apiKeyFromOptions} : {}),
     systemPrompt,
     fileManifest,
-    previousAudit: (mode === "levy" || mode === "phase4" || mode === "expenses" || mode === "compliance" || mode === "completion" || mode === "aiAttempt" ? step0Output : previousAudit) ?? undefined,
+    previousAudit:
+      mode === "levy" ||
+      mode === "phase4" ||
+      mode === "expenses" ||
+      mode === "compliance" ||
+      mode === "completion" ||
+      mode === "aiAttempt"
+        ? step0Output
+        : previousAudit ?? undefined,
     mode,
     aiAttemptTargets: mode === "aiAttempt" ? aiAttemptTargets : undefined,
   };
@@ -125,7 +143,7 @@ export async function callExecuteFullReview(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
   });
@@ -139,11 +157,11 @@ export async function callExecuteFullReview(
     } catch {
       errMessage = errText || res.statusText;
     }
-    throw new Error(`审计请求失败: ${errMessage}`);
+    throw new Error(`Audit request failed: ${errMessage}`);
   }
 
   const json = (await res.json()) as AuditResponse;
   return json;
 }
 
-export { getFunctionUrl, DIRECT_FUNCTION_URL };
+export { getFunctionUrl };

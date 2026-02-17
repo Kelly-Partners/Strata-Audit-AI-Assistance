@@ -1,0 +1,8 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html"
+  },
+  "globalHeaders": {
+    "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
+  }
+}
