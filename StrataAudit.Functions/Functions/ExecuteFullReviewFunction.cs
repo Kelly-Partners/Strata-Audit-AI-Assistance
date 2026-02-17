@@ -19,15 +19,18 @@ namespace StrataAudit.Functions.Functions;
 public sealed class ExecuteFullReviewFunction
 {
     private readonly IAuditReviewService _reviewService;
+    private readonly IBlobStorageService _blobService;
     private readonly IConfiguration _config;
     private readonly ILogger<ExecuteFullReviewFunction> _logger;
 
     public ExecuteFullReviewFunction(
         IAuditReviewService reviewService,
+        IBlobStorageService blobService,
         IConfiguration config,
         ILogger<ExecuteFullReviewFunction> logger)
     {
         _reviewService = reviewService;
+        _blobService = blobService;
         _config = config;
         _logger = logger;
     }
@@ -71,6 +74,22 @@ public sealed class ExecuteFullReviewFunction
             if (body.FileManifest is null)
             {
                 return new BadRequestObjectResult(new { error = "Missing or invalid fileManifest in body" });
+            }
+
+            // Server-side file fetching: if no base64 files are provided but filePaths
+            // exist, download the files from Blob Storage. This avoids re-uploading large
+            // PDFs that are already stored (e.g., Call 2 phases reusing Step 0 files).
+            if ((body.Files is null || body.Files.Count == 0) && body.FilePaths is { Count: > 0 })
+            {
+                var planIdForBlob = body.PlanId ?? "";
+                if (string.IsNullOrEmpty(planIdForBlob) && body.FilePaths[0].Split('/') is { Length: >= 4 } parts)
+                    planIdForBlob = parts[3];
+
+                _logger.LogInformation(
+                    "Fetching {Count} files from Blob Storage for plan {PlanId}",
+                    body.FilePaths.Count, planIdForBlob);
+
+                body.Files = await _blobService.LoadFilesAsync(userId, planIdForBlob, body.FilePaths);
             }
 
             if (body.Files is null || body.Files.Count == 0)

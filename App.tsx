@@ -1,7 +1,7 @@
 
 
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
 import { ReportSkeleton } from './components/ReportSkeleton';
@@ -16,7 +16,7 @@ import {
   toAzureUser,
 } from './services/azure-auth';
 import type { AzureUser } from './services/azure-auth';
-import { uploadPlanFiles, uploadAdditionalRunFiles, loadPlanFilesFromStorage, deletePlanFilesFromStorage } from './services/azure-storage';
+import { uploadPlanFiles, uploadAdditionalRunFiles, loadPlanFilesFromStorage, deletePlanFilesFromStorage, getFileUrl } from './services/azure-storage';
 import { savePlanToCosmosDB, getPlansFromCosmosDB, deletePlanFromCosmosDB } from './services/azure-cosmos';
 import { getEffectiveExpenseSamples, ensureExpenseRuns } from './src/services/expenseRunsHelpers';
 import { Plan, PlanStatus, TriageItem, UserResolution, ResolutionType, FileMetaEntry } from './types';
@@ -217,6 +217,19 @@ const App: React.FC = () => {
     })();
     return () => { cancelled = true; };
   }, [azureUser?.uid, activePlanId, activePlan?.id, activePlan?.filePaths?.length, activePlan?.files.length]);
+
+  // PDF URL resolution for AuditReport: generates a SAS URL for a given blob path
+  const getPdfUrlFn = useCallback(
+    async (blobPath: string): Promise<string | null> => {
+      if (!activePlanId) return null;
+      try {
+        return await getFileUrl(activePlanId, blobPath);
+      } catch {
+        return null;
+      }
+    },
+    [activePlanId]
+  );
 
   // --- PLAN MANAGEMENT HELPERS ---
 
@@ -1243,7 +1256,7 @@ const App: React.FC = () => {
                     data={activePlan.result}
                     files={activePlan.files}
                     filePaths={activePlan.filePaths ?? []}
-                    getPdfUrlFn={undefined /* TODO: implement Azure Blob PDF URL resolution */}
+                    getPdfUrlFn={getPdfUrlFn}
                     triageItems={activePlan.triage}
                     userResolutions={activePlan.user_resolutions ?? []}
                     aiAttemptHistory={activePlan.ai_attempt_history ?? []}

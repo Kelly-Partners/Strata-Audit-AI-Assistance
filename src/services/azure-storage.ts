@@ -118,6 +118,24 @@ export async function loadPlanFilesFromStorage(
 }
 
 /**
+ * Get a time-limited SAS URL for a blob (used for PDF viewing in iframes).
+ * Returns a URL that can be used directly as iframe src without auth headers.
+ * The planId is extracted from the blobPath (users/{userId}/plans/{planId}/...).
+ */
+export async function getFileUrl(
+  planId: string,
+  blobPath: string
+): Promise<string> {
+  const res = await apiFetch(`/plans/${planId}/files/url`, {
+    method: "POST",
+    body: JSON.stringify({ blobPath }),
+  });
+
+  const json = (await res.json()) as { url: string };
+  return json.url;
+}
+
+/**
  * Delete all files for a plan via Azure Function → Blob Storage.
  * userId parameter is kept for backward compatibility but is ignored —
  * the server extracts it from the Bearer token.

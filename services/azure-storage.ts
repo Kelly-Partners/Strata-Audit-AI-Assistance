@@ -6,4 +6,5 @@ export {
   uploadAdditionalRunFiles,
   loadPlanFilesFromStorage,
   deletePlanFilesFromStorage,
+  getFileUrl,
 } from "../src/services/azure-storage";

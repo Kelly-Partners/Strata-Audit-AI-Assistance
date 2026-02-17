@@ -55,8 +55,8 @@ interface AuditReportProps {
   onAddEvidenceClick?: () => void;
   /** Storage paths for initial files (enables forensic PDF preview from Storage when files[] is empty, e.g. after refresh) */
   filePaths?: string[];
-  /** Function to resolve a PDF URL from storage by origin name (provided by App.tsx) */
-  getPdfUrlFn?: (originName: string) => Promise<string | null>;
+  /** Function to resolve a PDF SAS URL from a blob path (provided by App.tsx) */
+  getPdfUrlFn?: (blobPath: string) => Promise<string | null>;
 }
 
 // Forensic Cell Component - Upgraded for UI Spec + High Visibility
@@ -933,7 +933,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
       if (!getPdfUrlFn || !filePaths?.length) return Promise.resolve(null);
       const path = resolveStoragePathByOriginName(originName, filePaths, additionalRuns);
       if (!path) return Promise.resolve(null);
-      return getPdfUrlFn(originName);
+      return getPdfUrlFn(path);
     },
     [getPdfUrlFn, filePaths, additionalRuns]
   );

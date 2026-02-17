@@ -1,5 +1,6 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Azure.Storage.Sas;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StrataAudit.Functions.Models;
@@ -105,6 +106,25 @@ public sealed class BlobStorageService : IBlobStorageService
         }
 
         _logger.LogInformation("Deleted {Count} files for plan {PlanId}", count, planId);
+    }
+
+    public Task<string> GenerateReadUrlAsync(string userId, string planId, string blobPath, TimeSpan? expiry = null)
+    {
+        var prefix = $"users/{userId}/plans/{planId}/";
+        if (!blobPath.StartsWith(prefix, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException($"Blob path does not belong to user's plan.");
+
+        var blobClient = _containerClient.GetBlobClient(blobPath);
+
+        if (!blobClient.CanGenerateSasUri)
+            throw new InvalidOperationException("Storage client cannot generate SAS URIs. Ensure connection string includes account key.");
+
+        var sasUri = blobClient.GenerateSasUri(
+            BlobSasPermissions.Read,
+            DateTimeOffset.UtcNow.Add(expiry ?? TimeSpan.FromHours(1)));
+
+        _logger.LogInformation("Generated SAS URL for blob: {Path}", blobPath);
+        return Task.FromResult(sasUri.ToString());
     }
 
     private static string SafeFileName(string name, int index)

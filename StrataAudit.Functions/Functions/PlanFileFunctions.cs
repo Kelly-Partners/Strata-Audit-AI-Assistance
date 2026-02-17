@@ -85,6 +85,42 @@ public sealed class PlanFileFunctions(
     }
 
     /// <summary>
+    /// POST /api/plans/{planId}/files/url — Generate a time-limited SAS URL for a blob.
+    /// Body: { "blobPath": "users/{userId}/plans/{planId}/file.pdf" }
+    /// Returns: { "url": "https://...?sv=...&sig=..." }
+    /// </summary>
+    [Function("GetFileUrl")]
+    public async Task<IActionResult> GetFileUrl(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "plans/{planId}/files/url")] HttpRequest req,
+        string planId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var userId = await TokenHelper.ExtractUserIdAsync(req, config);
+
+            var body = await JsonSerializer.DeserializeAsync<FileUrlRequest>(req.Body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+
+            if (string.IsNullOrWhiteSpace(body?.BlobPath))
+                return new BadRequestObjectResult(new { error = "blobPath is required." });
+
+            var url = await blobService.GenerateReadUrlAsync(userId, planId, body.BlobPath);
+            return new OkObjectResult(new { url });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            logger.LogWarning(ex, "Unauthorized file URL request");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate file URL for plan {PlanId}", planId);
+            return new ObjectResult(new { error = ex.Message }) { StatusCode = 500 };
+        }
+    }
+
+    /// <summary>
     /// DELETE /api/plans/{planId}/files — Delete all files for a plan.
     /// </summary>
     [Function("DeletePlanFiles")]
