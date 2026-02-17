@@ -12,32 +12,6 @@ const admin = require("firebase-admin");
 const {CORS_ALLOWED_ORIGINS} = require("./constants");
 const {executeFullReview} = require("./geminiReview");
 
-/** Get effective expense_samples from result (expense_runs combined or legacy expense_samples). */
-function getEffectiveExpenseSamples(result) {
-  if (!result) return [];
-  if (result.expense_runs?.length) {
-    const list = [];
-    const indexByGlId = new Map();
-    for (let r = 0; r < result.expense_runs.length; r++) {
-      const run = result.expense_runs[r];
-      const runSamples = run.expense_samples || [];
-      for (let i = 0; i < runSamples.length; i++) {
-        const s = runSamples[i];
-        const key = s.GL_ID ?? `_${r}_${i}`;
-        const idx = indexByGlId.get(key);
-        if (idx !== undefined) {
-          list[idx] = s;
-        } else {
-          indexByGlId.set(key, list.length);
-          list.push(s);
-        }
-      }
-    }
-    return list;
-  }
-  return result.expense_samples || [];
-}
-
 if (!admin.apps.length) admin.initializeApp();
 
 setGlobalOptions({maxInstances: 10});
@@ -205,37 +179,9 @@ exports.executeFullReview = onRequest(
             } else {
               let fullResult;
               if (mode === "aiAttempt") {
+                // Do NOT merge ai_attempt_updates into report – keep previous state; only attach resolution table (AI explanation).
                 const prev = body.previousAudit || {};
-                const ups = result.ai_attempt_updates;
                 fullResult = {...prev};
-                if (ups?.levy_reconciliation) fullResult.levy_reconciliation = ups.levy_reconciliation;
-                if (ups?.balance_sheet_updates?.length && fullResult.assets_and_cash?.balance_sheet_verification) {
-                  const verif = [...fullResult.assets_and_cash.balance_sheet_verification];
-                  const key = (b) => `${b.line_item || ""}|${b.fund || "N/A"}`;
-                  const updateMap = new Map(ups.balance_sheet_updates.map((b) => [key(b), b]));
-                  for (let i = 0; i < verif.length; i++) {
-                    const u = updateMap.get(key(verif[i]));
-                    if (u) verif[i] = u;
-                  }
-                  fullResult.assets_and_cash = {...fullResult.assets_and_cash, balance_sheet_verification: verif};
-                }
-                if (ups?.expense_updates?.length) {
-                  const effective = getEffectiveExpenseSamples(fullResult);
-                  if (effective.length > 0) {
-                    const samples = [...effective];
-                    for (const u of ups.expense_updates) {
-                      const match = (u.merge_key || "").match(/^exp_(\d+)$/);
-                      if (match) {
-                        const idx = parseInt(match[1], 10);
-                        if (idx >= 0 && idx < samples.length && u.item) samples[idx] = u.item;
-                      }
-                    }
-                    fullResult.expense_samples = samples;
-                  }
-                }
-                if (ups?.statutory_compliance && Object.keys(ups.statutory_compliance).length > 0) {
-                  fullResult.statutory_compliance = {...fullResult.statutory_compliance, ...ups.statutory_compliance};
-                }
                 if (Array.isArray(result.ai_attempt_resolution_table)) {
                   fullResult.ai_attempt_resolution_table = result.ai_attempt_resolution_table;
                 }

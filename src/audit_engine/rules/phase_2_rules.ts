@@ -16,17 +16,17 @@ export const PHASE_2_ITEM_RULES: PhaseRulesMap = {
     whitelistDocTypes: ["AGM Minutes (signed)", "Committee Minutes", "AGM Minutes", "Committee Minutes (levy context)"],
     requiredEvidenceTypes: ["minutes"],
     guidance:
-      "**Old rate / New rate** and the **date the new levy rate was adopted** (for quarterly proportion) must be sourced ONLY from minutes (document_register where Evidence_Tier = Tier 2: AGM Minutes or Committee Minutes). " +
-      "Do not infer rate or adoption date from Financial Statement, Levy Register, or other documents. Cite document_register ID and page_ref. " +
-      "Use this adoption date together with the plan's financial year (from levy_financial_year rule) to compute quarterly proportion for Old Rate Levies vs New Rate Levies.",
+      "**Old rate / New rate** and (when needed for fallback) the **date the new levy rate was adopted** must be sourced ONLY from minutes (document_register where Evidence_Tier = Tier 2: AGM Minutes or Committee Minutes). " +
+      "Do not infer rate, adoption date, or payment amounts/dates from Financial Statement, Levy Register, or other documents. Cite document_register ID and page_ref. " +
+      "**Primary:** Use specific amounts and payment/due dates from minutes; filter by LOCKED financial year (levy_financial_year). **Fallback:** If minutes do not give payment-level amounts and dates, use adoption date with plan's financial year to compute time-apportion (Old vs New Rate Levies).",
   },
   levy_old_new_levies_source: {
     whitelistDocTypes: ["AGM Minutes (signed)", "Committee Minutes", "AGM Minutes", "Committee Minutes (levy context)"],
     requiredEvidenceTypes: ["minutes"],
     guidance:
-      "**Old Rate Levies** and **New Rate Levies** (master_table: Old_Levy_Admin, Old_Levy_Sink, Old_Levy_Total, New_Levy_Admin, New_Levy_Sink, New_Levy_Total): the **source** for these six fields must be ONLY minutes (document_register where Evidence_Tier = Tier 2: AGM Minutes or Committee Minutes). " +
-      "Either the amount is extracted directly from minutes, or it is calculated by quarterly proportion using FY from intake_summary.financial_year (LOCKED) and rate adoption date from minutes (see levy_financial_year and levy_old_new_rate). " +
-      "In all cases, source_doc_id and page_ref must cite minutes; do not cite Financial Statement, Levy Register, or other documents as the source for Old Rate Levies or New Rate Levies.",
+      "**Old Rate Levies** and **New Rate Levies** (master_table: Old_Levy_Admin, Old_Levy_Sink, Old_Levy_Total, New_Levy_Admin, New_Levy_Sink, New_Levy_Total): source ONLY minutes. " +
+      "**Primary (preferred):** Extract from minutes **specific amounts and payment or due dates**; using LOCKED intake_summary.financial_year, take only those payments whose **date falls within the audit FY**; sum by Old vs New per minutes and output the six fields. " +
+      "**Fallback:** If minutes do not provide payment-level amounts and dates, use adoption date from minutes with FY to time-apportion (e.g. quarterly proportion) and compute Old vs New. In all cases source_doc_id and page_ref must cite minutes; do not cite Financial Statement or Levy Register.",
   },
   levy_subtotal_b: {
     guidance:

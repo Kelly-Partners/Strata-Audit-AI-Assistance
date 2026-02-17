@@ -1,7 +1,9 @@
 
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getDownloadURL, ref } from 'firebase/storage';
+import type { FirebaseStorage } from 'firebase/storage';
 import {
   AuditResponse,
   TraceableValue,
@@ -52,6 +54,10 @@ interface AuditReportProps {
   additionalRuns?: { run_id: string; file_paths: string[]; created_at: number }[];
   /** Opens the Add Evidence for Vouching modal */
   onAddEvidenceClick?: () => void;
+  /** Storage paths for initial files (enables forensic PDF preview from Storage when files[] is empty, e.g. after refresh) */
+  filePaths?: string[];
+  /** Firebase Storage instance (required with filePaths for Storage-based PDF preview) */
+  storage?: FirebaseStorage | null;
 }
 
 // Forensic Cell Component - Upgraded for UI Spec + High Visibility
@@ -62,11 +68,13 @@ const ForensicCell: React.FC<{
   isCurrency?: boolean;
   textColor?: string;
   isBold?: boolean;
-}> = ({ val, docs, files, isCurrency = true, textColor, isBold = false }) => {
+  /** When provided and files[] has no match, PDF is loaded from Storage by Document_Origin_Name */
+  getPdfUrl?: (originName: string) => Promise<string | null>;
+}> = ({ val, docs, files, isCurrency = true, textColor, isBold = false, getPdfUrl }) => {
   const [showCard, setShowCard] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0, placement: 'top' });
   const [showPdfModal, setShowPdfModal] = useState(false);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfUrlState, setPdfUrlState] = useState<{ url: string; isObjectUrl: boolean } | null>(null);
   
   const buttonRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null); // Ref for the popup card
@@ -77,6 +85,7 @@ const ForensicCell: React.FC<{
   const doc = safeDocs.find(d => d.Document_ID === val?.source_doc_id);
   // Only resolve file by Document_Origin_Name from register; no fallback by arbitrary source_doc_id
   const targetFile = doc ? findFileByName(files, doc.Document_Origin_Name ?? '') : undefined;
+  const canOpenPdfFromStorage = Boolean(getPdfUrl && doc?.Document_Origin_Name);
 
   // Safe val check
   if (!val) return <span className="text-gray-300">-</span>;
@@ -134,29 +143,39 @@ const ForensicCell: React.FC<{
     setShowCard(!showCard);
   };
 
-  const handleOpenPdf = () => {
-    if (!targetFile) {
-        alert("Original source file not found in current session. Please re-upload evidence to view.");
-        return;
+  const handleOpenPdf = async () => {
+    if (targetFile) {
+      const objectUrl = URL.createObjectURL(targetFile);
+      const pageNum = extractPageNumber(val.page_ref || val.note || "");
+      const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
+      setPdfUrlState({ url: finalUrl, isObjectUrl: true });
+      setShowPdfModal(true);
+      setShowCard(false);
+      return;
     }
-    
-    const objectUrl = URL.createObjectURL(targetFile);
-    // Extract page number from multiple formats: "Page 3", "p.3", "pg 3", "3", "p3"
-    const pageNum = extractPageNumber(val.page_ref || val.note || "");
-    const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
-    
-    setPdfUrl(finalUrl);
-    setShowPdfModal(true);
-    setShowCard(false);
+    if (getPdfUrl && doc?.Document_Origin_Name) {
+      try {
+        const url = await getPdfUrl(doc.Document_Origin_Name);
+        if (url) {
+          const pageNum = extractPageNumber(val.page_ref || val.note || "");
+          const finalUrl = pageNum ? `${url}#page=${pageNum}` : url;
+          setPdfUrlState({ url: finalUrl, isObjectUrl: false });
+          setShowPdfModal(true);
+          setShowCard(false);
+          return;
+        }
+      } catch (_) { /* ignore */ }
+    }
+    alert("Original source file not found in current session. Please re-upload evidence to view.");
   };
 
   useEffect(() => {
     return () => {
-      if (pdfUrl) {
-         URL.revokeObjectURL(pdfUrl.split('#')[0]);
+      if (pdfUrlState?.url && pdfUrlState.isObjectUrl) {
+        URL.revokeObjectURL(pdfUrlState.url.split('#')[0]);
       }
     };
-  }, [pdfUrl]);
+  }, [pdfUrlState?.url, pdfUrlState?.isObjectUrl]);
 
   return (
     <>
@@ -272,11 +291,11 @@ const ForensicCell: React.FC<{
                 </div>
               )}
 
-              {/* ACTION: View PDF */}
-              {targetFile && (
+              {/* ACTION: View PDF (from memory File or Storage when filePaths provided) */}
+              {(targetFile || canOpenPdfFromStorage) && (
                 <div className="pt-2">
                    <button 
-                     onClick={handleOpenPdf}
+                     onClick={() => handleOpenPdf()}
                      className="w-full flex items-center justify-center gap-2 bg-black text-white hover:bg-[#004F9F] transition-colors py-2 text-caption font-bold uppercase tracking-wider rounded-sm"
                    >
                      View Source Document
@@ -288,7 +307,7 @@ const ForensicCell: React.FC<{
       )}
 
       {/* PDF Modal */}
-      {showPdfModal && pdfUrl && (
+      {showPdfModal && pdfUrlState?.url && (
         <div 
           onClick={() => setShowPdfModal(false)}
           className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-10 animate-fade-in"
@@ -300,7 +319,7 @@ const ForensicCell: React.FC<{
               <div className="flex justify-between items-center bg-[#111] text-white px-6 py-4 border-b border-gray-800 shrink-0">
                  <div className="flex items-center gap-3 overflow-hidden">
                     <span className="bg-[#004F9F] text-white text-caption font-bold px-2 py-1 rounded-sm uppercase tracking-wide">Evidence Preview</span>
-                    <span className="font-bold truncate text-gray-300" title={targetFile?.name}>
+                    <span className="font-bold truncate text-gray-300" title={targetFile?.name ?? doc?.Document_Origin_Name}>
                       {doc ? doc.Document_Origin_Name : targetFile?.name}
                     </span>
                     <span className="text-gray-500 text-body">/</span>
@@ -315,7 +334,7 @@ const ForensicCell: React.FC<{
               </div>
               <div className="flex-1 bg-gray-100 relative">
                  <iframe 
-                   src={pdfUrl} 
+                   src={pdfUrlState.url} 
                    className="w-full h-full absolute inset-0" 
                    title="Document Preview"
                  />
@@ -360,6 +379,21 @@ function norm(name: string): string {
   return name.replace(/^\d+_/, "").replace(/[\s_]+/g, "_").toLowerCase().trim();
 }
 
+/** Resolve Storage path from Document_Origin_Name using filePaths + additional run paths (for PDF preview when files[] is empty). */
+function resolveStoragePathByOriginName(
+  originName: string,
+  filePaths: string[],
+  additionalRuns?: { file_paths?: string[] }[]
+): string | null {
+  if (!originName?.trim()) return null;
+  const n = norm(originName);
+  const allPaths = [
+    ...(filePaths ?? []),
+    ...(additionalRuns ?? []).flatMap((r) => r.file_paths ?? []),
+  ];
+  return allPaths.find((p) => norm((p.split("/").pop() || "")) === n) ?? null;
+}
+
 /**
  * Find File by name. Handles:
  * - Exact match, case-insensitive
@@ -386,39 +420,54 @@ const ExpenseForensicPopover: React.FC<{
   docs: DocumentEntry[];
   files: File[];
   onClose: () => void;
-}> = ({ payload, docs, files, onClose }) => {
+  getPdfUrl?: (originName: string) => Promise<string | null>;
+}> = ({ payload, docs, files, onClose, getPdfUrl }) => {
   const [showPdfModal, setShowPdfModal] = useState(false);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfUrlState, setPdfUrlState] = useState<{ url: string; isObjectUrl: boolean } | null>(null);
   const [pdfTarget, setPdfTarget] = useState<{ docName?: string; pageRef?: string } | null>(null);
   const safeDocs = docs || [];
 
-  const openPdf = (sourceDocId: string, pageRef: string) => {
+  const openPdf = async (sourceDocId: string, pageRef: string) => {
     const doc = resolveDocForExpense(safeDocs, sourceDocId);
     const originName = doc?.Document_Origin_Name;
     const targetFile = originName ? findFileByName(files, originName) : undefined;
-    if (!targetFile) {
-      alert("Original source file not found in current session. Please re-upload evidence to view.");
+    if (targetFile) {
+      const objectUrl = URL.createObjectURL(targetFile);
+      const pageNum = extractPageNumber(pageRef || "");
+      const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
+      setPdfTarget({ docName: originName, pageRef: pageRef || undefined });
+      setPdfUrlState({ url: finalUrl, isObjectUrl: true });
+      setShowPdfModal(true);
       return;
     }
-    const objectUrl = URL.createObjectURL(targetFile);
-    const pageNum = extractPageNumber(pageRef || "");
-    const finalUrl = pageNum ? `${objectUrl}#page=${pageNum}` : objectUrl;
-    setPdfTarget({ docName: originName, pageRef: pageRef || undefined });
-    setPdfUrl(finalUrl);
-    setShowPdfModal(true);
+    if (getPdfUrl && originName) {
+      try {
+        const url = await getPdfUrl(originName);
+        if (url) {
+          const pageNum = extractPageNumber(pageRef || "");
+          const finalUrl = pageNum ? `${url}#page=${pageNum}` : url;
+          setPdfTarget({ docName: originName, pageRef: pageRef || undefined });
+          setPdfUrlState({ url: finalUrl, isObjectUrl: false });
+          setShowPdfModal(true);
+          return;
+        }
+      } catch (_) { /* ignore */ }
+    }
+    alert("Original source file not found in current session. Please re-upload evidence to view.");
   };
 
   const doc = resolveDocForExpense(safeDocs, payload.source_doc_id);
   const originName = doc?.Document_Origin_Name;
   const targetFile = originName ? findFileByName(files, originName) : undefined;
+  const canOpenPdfFromStorage = Boolean(getPdfUrl && originName);
 
-  const handleOpenPdf = () => {
-    openPdf(payload.source_doc_id, payload.page_ref || payload.note || "");
-  };
+  const handleOpenPdf = () => { openPdf(payload.source_doc_id, payload.page_ref || payload.note || ""); };
 
   useEffect(() => {
-    return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl.split('#')[0]); };
-  }, [pdfUrl]);
+    return () => {
+      if (pdfUrlState?.url && pdfUrlState.isObjectUrl) URL.revokeObjectURL(pdfUrlState.url.split('#')[0]);
+    };
+  }, [pdfUrlState?.url, pdfUrlState?.isObjectUrl]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -463,7 +512,7 @@ const ExpenseForensicPopover: React.FC<{
                           {sc.observed && <div className="text-caption text-gray-700 mt-1 font-medium">{sc.observed}</div>}
                           {sc.note && <div className="text-caption text-gray-600 mt-0.5 italic">{sc.note}</div>}
                         </div>
-                        {hasEvidence && scFile && (
+                        {hasEvidence && (scFile || (getPdfUrl && scDoc?.Document_Origin_Name)) && (
                           <button
                             type="button"
                             onClick={() => openPdf(sc.source_doc_id!, sc.page_ref || '')}
@@ -516,8 +565,8 @@ const ExpenseForensicPopover: React.FC<{
                 className={`w-full flex items-center justify-center gap-2 py-2 text-caption font-bold uppercase tracking-wider rounded-sm transition-colors ${
                   targetFile ? 'bg-black text-white hover:bg-[#004F9F]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
-                disabled={!targetFile}
-                title={!targetFile ? 'Source file not found – ensure evidence was uploaded and document is in the register' : undefined}
+                disabled={!targetFile && !canOpenPdfFromStorage}
+                title={!targetFile && !canOpenPdfFromStorage ? 'Source file not found – ensure evidence was uploaded and document is in the register' : undefined}
               >
                 View source document in PDF
               </button>
@@ -527,7 +576,7 @@ const ExpenseForensicPopover: React.FC<{
           </div>
         </div>
       </div>
-      {showPdfModal && pdfUrl && (
+      {showPdfModal && pdfUrlState?.url && (
         <div className="fixed inset-0 z-[10001] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPdfModal(false)}>
           <div className="bg-white w-full h-full rounded shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center bg-[#111] text-white px-6 py-4 border-b border-gray-800 shrink-0">
@@ -539,7 +588,7 @@ const ExpenseForensicPopover: React.FC<{
               <button onClick={() => setShowPdfModal(false)} className="text-gray-400 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2">✕</button>
             </div>
             <div className="flex-1 bg-gray-100 relative">
-              <iframe src={pdfUrl} className="w-full h-full absolute inset-0" title="Document Preview" />
+              <iframe src={pdfUrlState.url} className="w-full h-full absolute inset-0" title="Document Preview" />
             </div>
           </div>
         </div>
@@ -875,10 +924,20 @@ const TAB_TO_FOCUS: Record<string, 'levy' | 'assets' | 'expense' | 'gstComplianc
 export const AuditReport: React.FC<AuditReportProps> = ({
   data, files, triageItems, userResolutions = [], onTriage, onMarkOff, getResolution,
   focusTab, onFocusTabConsumed, onRequestFocusTab, aiAttemptHistory = [],
-  additionalRuns = [], onAddEvidenceClick,
+  additionalRuns = [], onAddEvidenceClick, filePaths = [], storage,
 }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'levy' | 'assets' | 'expense' | 'gstCompliance' | 'aiAttempt' | 'completion'>('docs');
   const [activeVerificationSteps, setActiveVerificationSteps] = useState<VerificationStep[] | null>(null);
+
+  const getPdfUrl = useCallback(
+    (originName: string): Promise<string | null> => {
+      if (!storage || !filePaths?.length) return Promise.resolve(null);
+      const path = resolveStoragePathByOriginName(originName, filePaths, additionalRuns);
+      if (!path) return Promise.resolve(null);
+      return getDownloadURL(ref(storage, path));
+    },
+    [storage, filePaths, additionalRuns]
+  );
 
   useEffect(() => {
     if (focusTab) {
@@ -936,6 +995,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
             payload={buildExpenseForensicPayload(expenseForensic.item, expenseForensic.pillar, docs)}
             docs={docs}
             files={files}
+            getPdfUrl={getPdfUrl}
             onClose={() => setExpenseForensic(null)}
          />
       )}
@@ -1215,8 +1275,8 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                   }`}>{row.section || '–'}</span>
                                 </td>
                                 <td className="px-3 py-2 text-gray-600">{row.fund || 'N/A'}</td>
-                                <td className="px-3 py-2 text-right font-mono font-medium"><ForensicCell val={currTrace} docs={docs} files={files} /></td>
-                                <td className="px-3 py-2 text-right font-mono"><ForensicCell val={priorTrace} docs={docs} files={files} /></td>
+                                <td className="px-3 py-2 text-right font-mono font-medium"><ForensicCell val={currTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                                <td className="px-3 py-2 text-right font-mono"><ForensicCell val={priorTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                               </tr>
                             );
                           })}
@@ -1298,8 +1358,8 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                   }`}>{row.section || '–'}</span>
                                 </td>
                                 <td className="px-3 py-2 text-gray-600">{row.fund || 'N/A'}</td>
-                                <td className="px-3 py-2 text-right font-mono font-medium"><ForensicCell val={currTrace} docs={docs} files={files} /></td>
-                                <td className="px-3 py-2 text-right font-mono"><ForensicCell val={priorTrace} docs={docs} files={files} /></td>
+                                <td className="px-3 py-2 text-right font-mono font-medium"><ForensicCell val={currTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                                <td className="px-3 py-2 text-right font-mono"><ForensicCell val={priorTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                               </tr>
                             );
                           })}
@@ -1358,7 +1418,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Levies in Arrears</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Arrears} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Arrears} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('prior_arr', 'Prior Year Arrears', data.levy_reconciliation.master_table.PriorYear_Arrears.note || '-')}
                         </td>
@@ -1367,7 +1427,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">(Less) Levies in Advance</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-3 text-red-700">(<ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Advance} docs={docs} files={files} />)</td>
+                        <td className="px-5 py-3 text-red-700">(<ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Advance} docs={docs} files={files} getPdfUrl={getPdfUrl} />)</td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('prior_adv', 'Prior Year Advance', data.levy_reconciliation.master_table.PriorYear_Advance.note || '-')}
                         </td>
@@ -1376,7 +1436,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-3 text-left pl-8 font-bold text-black">(A) NET PRIOR YEAR</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-3 font-bold text-black"><ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Net} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3 font-bold text-black"><ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Net} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('prior_net', 'Net Prior Year', data.levy_reconciliation.master_table.PriorYear_Net.note || '-')}
                         </td>
@@ -1389,18 +1449,18 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Old Rate Levies</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Old_Levy_Admin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Old_Levy_Sink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Old_Levy_Total} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Old_Levy_Admin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Old_Levy_Sink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Old_Levy_Total} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('old_levy', 'Old Levies', data.levy_reconciliation.master_table.Old_Levy_Total.note || '-')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">New Rate Levies</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.New_Levy_Admin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.New_Levy_Sink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.New_Levy_Total} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.New_Levy_Admin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.New_Levy_Sink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.New_Levy_Total} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('new_levy', 'New Levies', data.levy_reconciliation.master_table.New_Levy_Total.note || '-')}
                         </td>
@@ -1415,9 +1475,9 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                       return (
                         <tr className="border-b border-gray-100 font-bold bg-gray-50/30 group hover:bg-gray-50/50">
                           <td className="px-5 py-3 text-left pl-8">(B1) STANDARD LEVIES</td>
-                          <td className="px-5 py-3"><ForensicCell val={b1Admin} docs={docs} files={files} /></td>
-                          <td className="px-5 py-3"><ForensicCell val={b1Sink} docs={docs} files={files} /></td>
-                          <td className="px-5 py-3"><ForensicCell val={mt.Sub_Levies_Standard} docs={docs} files={files} /></td>
+                          <td className="px-5 py-3"><ForensicCell val={b1Admin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                          <td className="px-5 py-3"><ForensicCell val={b1Sink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                          <td className="px-5 py-3"><ForensicCell val={mt.Sub_Levies_Standard} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                           <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                             {withAction('sub_std', 'Standard Levies', mt.Sub_Levies_Standard.note || '—')}
                           </td>
@@ -1428,9 +1488,9 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                     {/* NEW: Adjustments / Other Income */}
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Special Levies (Net)</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Spec_Levy_Admin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Spec_Levy_Sink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Spec_Levy_Total} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Spec_Levy_Admin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Spec_Levy_Sink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Spec_Levy_Total} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('spec_levy', 'Special Levies', data.levy_reconciliation.master_table.Spec_Levy_Total.note || '-')}
                         </td>
@@ -1448,18 +1508,18 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Interest Charged</td>
-                        <td className="px-5 py-3"><ForensicCell val={intAdmin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={intSink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={intTotal} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={intAdmin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={intSink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={intTotal} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('int_chgd', 'Interest Charged', intTotal.note || intAdmin.note || '-')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Less: Discount Given</td>
-                        <td className="px-5 py-3"><ForensicCell val={discAdmin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={discSink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={discTotal} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={discAdmin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={discSink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={discTotal} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('disc_given', 'Discount Given', discTotal.note || discAdmin.note || '-')}
                         </td>
@@ -1469,18 +1529,18 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                     })()}
                      <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Legal Costs Recovery</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Legal_Recovery} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Legal_Recovery} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Legal_Recovery} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Legal_Recovery} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('leg_rec', 'Legal Recovery', data.levy_reconciliation.master_table.Plus_Legal_Recovery.note || '-')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">Other Recovery</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Other_Recovery} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Other_Recovery} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Other_Recovery} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Plus_Other_Recovery} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('oth_rec', 'Other Recovery', data.levy_reconciliation.master_table.Plus_Other_Recovery.note || '-')}
                         </td>
@@ -1488,9 +1548,9 @@ export const AuditReport: React.FC<AuditReportProps> = ({
 
                     <tr className="border-b border-gray-100 font-bold bg-gray-50/30 group hover:bg-gray-50/50">
                         <td className="px-5 py-3 text-left pl-8">(B) SUB-TOTAL (NET)</td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Sub_Admin_Net} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Sub_Sink_Net} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Total_Levies_Net} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Sub_Admin_Net} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Sub_Sink_Net} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={data.levy_reconciliation.master_table.Total_Levies_Net} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('sub_net', 'Sub Total Net', data.levy_reconciliation.master_table.Total_Levies_Net.note || 'Sum of All Above')}
                         </td>
@@ -1516,27 +1576,27 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">GST on Levies (10%)</td>
-                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Admin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Sink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={gstStandardTotal} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Admin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Sink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={gstStandardTotal} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('gst_std', 'GST Standard', mt.GST_Admin?.note || 'Standard')}
                         </td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">GST on Special Levies (10%)</td>
-                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special_Admin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special_Sink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special_Admin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special_Sink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.GST_Special} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                          <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                             {withAction('gst_spec', 'GST Special', mt.GST_Special?.note ?? mt.GST_Special_Admin?.note ?? mt.GST_Special_Sink?.note ?? 'Special')}
                          </td>
                     </tr>
                     <tr className="border-b border-gray-100 font-bold bg-gray-50/30 group hover:bg-gray-50/50">
                         <td className="px-5 py-3 text-left pl-8">(C) TOTAL GST</td>
-                        <td className="px-5 py-3"><ForensicCell val={gstTotalAdmin} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={gstTotalSink} docs={docs} files={files} /></td>
-                        <td className="px-5 py-3"><ForensicCell val={mt.Total_GST_Raised} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={gstTotalAdmin} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={gstTotalSink} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
+                        <td className="px-5 py-3"><ForensicCell val={mt.Total_GST_Raised} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('gst_tot', 'Total GST', mt.Total_GST_Raised?.note || 'Sum of GST')}
                         </td>
@@ -1550,7 +1610,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                       <td className="px-5 py-4 text-left font-bold text-black">(D) TOTAL LEVIES & GST RAISED (PERIOD)</td>
                       <td></td>
                       <td></td>
-                      <td className="px-5 py-4 font-bold text-black"><ForensicCell val={data.levy_reconciliation.master_table.Total_Gross_Inc} docs={docs} files={files} /></td>
+                      <td className="px-5 py-4 font-bold text-black"><ForensicCell val={data.levy_reconciliation.master_table.Total_Gross_Inc} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                       <td className="px-5 py-4 text-left pl-8 text-gray-500 font-bold text-body">
                          {withAction('tot_gross', 'Total Gross', '(B) + (C) only; (A) added in Calc Closing = A + D - E')}
                       </td>
@@ -1566,14 +1626,14 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">(A) Net Prior Year</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Net} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.PriorYear_Net} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td></td>
                     </tr>
                     <tr className="group hover:bg-gray-50">
                         <td className="px-5 py-3 text-left pl-8 text-gray-600">(+) (D) Total Levies & GST Raised (Period)</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.Total_Gross_Inc} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.Total_Gross_Inc} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 text-caption">(B)+(C); A added below</td>
                     </tr>
                     
@@ -1591,7 +1651,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             <td className="px-5 py-2 text-left pl-12 text-gray-600">Admin receipts</td>
                             <td></td>
                             <td></td>
-                            <td className="px-5 py-2 text-right"><ForensicCell val={data.levy_reconciliation.master_table.Admin_Fund_Receipts} docs={docs} files={files} /></td>
+                            <td className="px-5 py-2 text-right"><ForensicCell val={data.levy_reconciliation.master_table.Admin_Fund_Receipts} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                             <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-body">
                                {withAction('admin_rec', 'Admin Receipts', data.levy_reconciliation.master_table.Admin_Fund_Receipts.note || 'Administrative Fund receipts')}
                             </td>
@@ -1600,7 +1660,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             <td className="px-5 py-2 text-left pl-12 text-gray-600">Capital receipts</td>
                             <td></td>
                             <td></td>
-                            <td className="px-5 py-2 text-right"><ForensicCell val={data.levy_reconciliation.master_table.Capital_Fund_Receipts} docs={docs} files={files} /></td>
+                            <td className="px-5 py-2 text-right"><ForensicCell val={data.levy_reconciliation.master_table.Capital_Fund_Receipts} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                             <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-body">
                                {withAction('cap_rec', 'Capital Receipts', data.levy_reconciliation.master_table.Capital_Fund_Receipts.note || 'Capital / Sinking Fund receipts')}
                             </td>
@@ -1611,7 +1671,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                           <td className="px-5 py-2 text-left pl-12 text-gray-600">Admin + Capital Receipts</td>
                           <td></td>
                           <td></td>
-                          <td className="px-5 py-2 text-right"><ForensicCell val={data.levy_reconciliation.master_table.Total_Receipts_Global} docs={docs} files={files} /></td>
+                          <td className="px-5 py-2 text-right"><ForensicCell val={data.levy_reconciliation.master_table.Total_Receipts_Global} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                           <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-body">
                              {withAction('tot_rec', 'Admin + Capital Receipts', data.levy_reconciliation.master_table.Total_Receipts_Global?.note || 'Legacy: run fresh audit for Admin / Capital split')}
                           </td>
@@ -1621,7 +1681,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-3 text-left pl-12 font-medium italic text-gray-800">(E) Effective Levy Receipts</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-3 font-medium border-t border-gray-300"><ForensicCell val={data.levy_reconciliation.master_table.Effective_Levy_Receipts} docs={docs} files={files} /></td>
+                        <td className="px-5 py-3 font-medium border-t border-gray-300"><ForensicCell val={data.levy_reconciliation.master_table.Effective_Levy_Receipts} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-3 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('eff_rec', 'Effective Receipts', data.levy_reconciliation.master_table.Effective_Levy_Receipts.note || 'Admin + Capital total')}
                         </td>
@@ -1631,7 +1691,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-4 text-left pl-8 font-bold text-black">(=) CALC CLOSING</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-4 font-bold text-black"><ForensicCell val={data.levy_reconciliation.master_table.Calc_Closing} docs={docs} files={files} /></td>
+                        <td className="px-5 py-4 font-bold text-black"><ForensicCell val={data.levy_reconciliation.master_table.Calc_Closing} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('calc_close', 'Calc Closing', data.levy_reconciliation.master_table.Calc_Closing.note || 'A + D - E')}
                         </td>
@@ -1646,7 +1706,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-2 text-left pl-8 text-gray-600">Levies in Arrears</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-2 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.CurrentYear_Arrears} docs={docs} files={files} /></td>
+                        <td className="px-5 py-2 font-medium"><ForensicCell val={data.levy_reconciliation.master_table.CurrentYear_Arrears} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('curr_arr', 'Current Year Arrears', data.levy_reconciliation.master_table.CurrentYear_Arrears.note || 'Asset')}
                         </td>
@@ -1655,7 +1715,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-2 text-left pl-8 text-gray-600">Levies in Advance</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-2 text-red-700">(<ForensicCell val={data.levy_reconciliation.master_table.CurrentYear_Advance} docs={docs} files={files} />)</td>
+                        <td className="px-5 py-2 text-red-700">(<ForensicCell val={data.levy_reconciliation.master_table.CurrentYear_Advance} docs={docs} files={files} getPdfUrl={getPdfUrl} />)</td>
                         <td className="px-5 py-2 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('curr_adv', 'Current Year Advance', data.levy_reconciliation.master_table.CurrentYear_Advance.note || 'Liability (Credit)')}
                         </td>
@@ -1664,7 +1724,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                         <td className="px-5 py-4 text-left pl-8 font-bold text-gray-600">(G) NET CURRENT YEAR</td>
                         <td></td>
                         <td></td>
-                        <td className="px-5 py-4 font-bold text-gray-600"><ForensicCell val={data.levy_reconciliation.master_table.CurrentYear_Net} docs={docs} files={files} /></td>
+                        <td className="px-5 py-4 font-bold text-gray-600"><ForensicCell val={data.levy_reconciliation.master_table.CurrentYear_Net} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                         <td className="px-5 py-4 text-left pl-8 text-gray-400 italic text-body">
                            {withAction('curr_net', 'Net Current Year', data.levy_reconciliation.master_table.CurrentYear_Net.note || 'Net')}
                         </td>
@@ -1811,12 +1871,12 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                     <tr key={idx} className={rowClass}>
                                                         <td className={lineItemClass}>{item.line_item}</td>
                                                         <td className={`px-5 py-3 text-left text-gray-600 ${isTotalOrSubtotal ? 'font-semibold' : ''} ${cellBg}`}>{item.fund || '–'}</td>
-                                                        <td className={`px-5 py-3 ${cellBg}`}><ForensicCell val={bsTrace} docs={docs} files={files} isBold={isTotalOrSubtotal} /></td>
+                                                        <td className={`px-5 py-3 ${cellBg}`}><ForensicCell val={bsTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} isBold={isTotalOrSubtotal} /></td>
                                                         {pyVisible && (
                                                           <td className={`px-2 py-3 ${cellBg}`}>
                                                             {pyTrace ? (
                                                               pyExpanded ? (
-                                                                <ForensicCell val={pyTrace} docs={docs} files={files} isBold={isTotalOrSubtotal} />
+                                                                <ForensicCell val={pyTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} isBold={isTotalOrSubtotal} />
                                                               ) : (
                                                                 <span title={`${pyLabel} | From bs_extract prior_year`} className="text-micro text-gray-600">
                                                                   PY {pyTrace.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -1827,7 +1887,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                             )}
                                                           </td>
                                                         )}
-                                                        <td className={`px-5 py-3 ${cellBg}`}><ForensicCell val={supTrace} docs={docs} files={files} isBold={isTotalOrSubtotal} /></td>
+                                                        <td className={`px-5 py-3 ${cellBg}`}><ForensicCell val={supTrace} docs={docs} files={files} getPdfUrl={getPdfUrl} isBold={isTotalOrSubtotal} /></td>
                                                         <td className={`px-5 py-3 text-center ${cellBg}`}><StatusBadge status={item.status} /></td>
                                                         <td className={`px-5 py-3 text-left pl-4 pr-3 text-gray-400 italic text-body sticky right-0 z-10 ${cellBg}`}>
                                                             {withAction(`bs_${idx}_${(item.line_item || '').replace(/\s+/g, '_')}`, item.line_item || 'Line', noteContent)}
@@ -1984,7 +2044,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                                 <div className="text-body text-gray-500 mb-1">{item.GL_Date}</div>
                                                 <div className="font-bold text-gray-900">{item.GL_Payee}</div>
                                             </td>
-                                            <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} /></td>
+                                            <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                                             <td className="px-5 py-4 border-r border-gray-100 text-center">
                                                 <button type="button" onClick={() => setExpenseForensic({ pillar: 'INV', rowIndex: idx, item })} className="border-b border-dotted border-[#004F9F] hover:bg-[#004F9F]/10 cursor-pointer px-2 py-1 rounded-sm" title="Click for Forensic Trace">
                                                     {inv ? (() => {
@@ -2030,7 +2090,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                         <div className="text-body text-gray-500 mb-1">{item.GL_Date}</div>
                                         <div className="font-bold text-gray-900">{item.GL_Payee}</div>
                                     </td>
-                                    <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} /></td>
+                                    <td className="px-5 py-4 font-bold border-r border-gray-100"><ForensicCell val={item.GL_Amount} docs={docs} files={files} getPdfUrl={getPdfUrl} /></td>
                                     <td className="px-5 py-4 border-r border-gray-100">
                                         <div className="flex flex-col gap-2">
                                             <StatusBadge status={item.Invoice_Status ?? '–'} />
@@ -2085,25 +2145,25 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             <tr className="group hover:bg-gray-50 relative">
                                 <td className="py-3 px-5 font-bold text-gray-800">1. Opening Balance</td>
                                 <td className="py-3 px-5 text-right relative">
-                                    {withAction('gst_op', 'GST Opening', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_Opening_Bal} docs={docs} files={files} />)}
+                                    {withAction('gst_op', 'GST Opening', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_Opening_Bal} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             <tr className="group hover:bg-gray-50 relative">
                                 <td className="py-3 px-5 text-gray-600">2. Add: GST on Levies</td>
                                 <td className="py-3 px-5 text-right relative">
-                                    {withAction('gst_add', 'GST on Levies', <ForensicCell val={data.statutory_compliance.gst_reconciliation.Total_GST_Raised} docs={docs} files={files} />)}
+                                    {withAction('gst_add', 'GST on Levies', <ForensicCell val={data.statutory_compliance.gst_reconciliation.Total_GST_Raised} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             <tr className="group hover:bg-gray-50 relative">
                                 <td className="py-3 px-5 text-gray-600">3. Less: GST on Payments</td>
                                 <td className="py-3 px-5 text-right text-red-700 relative">
-                                    {withAction('gst_less', 'GST on Payments', <>(<ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_On_Payments} docs={docs} files={files} />)</>)}
+                                    {withAction('gst_less', 'GST on Payments', <>(<ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_On_Payments} docs={docs} files={files} getPdfUrl={getPdfUrl} />)</>)}
                                 </td>
                             </tr>
                             <tr className="bg-gray-50 border-y border-gray-200 group hover:bg-gray-100 relative">
                                 <td className="py-3 px-5 font-bold text-black">4. (=) Theor. Movement</td>
                                 <td className="py-3 px-5 text-right font-bold relative">
-                                    {withAction('gst_mvmt', 'GST Movement', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_Theor_Mvmt} docs={docs} files={files} />)}
+                                    {withAction('gst_mvmt', 'GST Movement', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_Theor_Mvmt} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             
@@ -2116,7 +2176,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                     <tr key={q} className="group hover:bg-gray-50 relative">
                                         <td className="py-2 px-5 text-gray-600 pl-8">{q} BAS Payment/(Refund)</td>
                                         <td className="py-2 px-5 text-right relative">
-                                            {withAction(`bas_${q}`, `${q} BAS`, <ForensicCell val={val} docs={docs} files={files} />)}
+                                            {withAction(`bas_${q}`, `${q} BAS`, <ForensicCell val={val} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                         </td>
                                     </tr>
                                 );
@@ -2125,7 +2185,7 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             <tr className="border-t border-dashed border-gray-300 group hover:bg-gray-50 relative">
                                 <td className="py-2 px-5 font-bold text-gray-700">5. Total BAS Cash</td>
                                 <td className="py-2 px-5 text-right font-bold relative">
-                                    {withAction('bas_tot', 'Total BAS', <ForensicCell val={data.statutory_compliance.gst_reconciliation.Total_BAS_Cash} docs={docs} files={files} />)}
+                                    {withAction('bas_tot', 'Total BAS', <ForensicCell val={data.statutory_compliance.gst_reconciliation.Total_BAS_Cash} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
 
@@ -2134,13 +2194,13 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                             <tr className="bg-gray-50 border-t border-gray-200 group hover:bg-gray-100 relative">
                                 <td className="py-3 px-5 font-bold text-black">6. Calc Closing Balance</td>
                                 <td className="py-3 px-5 text-right font-bold relative">
-                                    {withAction('gst_calc_cl', 'Calc GST Closing', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_Calc_Closing} docs={docs} files={files} />)}
+                                    {withAction('gst_calc_cl', 'Calc GST Closing', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_Calc_Closing} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             <tr className="group hover:bg-gray-50 relative">
                                 <td className="py-3 px-5 text-gray-600">7. GL Closing Balance</td>
                                 <td className="py-3 px-5 text-right relative">
-                                    {withAction('gst_gl_cl', 'GL GST Closing', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_GL_Closing} docs={docs} files={files} />)}
+                                    {withAction('gst_gl_cl', 'GL GST Closing', <ForensicCell val={data.statutory_compliance.gst_reconciliation.GST_GL_Closing} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             <tr className="border-t-4 border-double border-black group hover:bg-gray-50 relative">
@@ -2168,13 +2228,13 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                     <tr className="group hover:bg-gray-50 relative">
                                         <td className="py-3 px-2 text-gray-600">Suggested Sum Insured</td>
                                         <td className="py-3 px-2 font-medium text-right relative">
-                                            {withAction('ins_val', 'Valuation Amount', <ForensicCell val={data.statutory_compliance.insurance.Valuation_Amount} docs={docs} files={files} />)}
+                                            {withAction('ins_val', 'Valuation Amount', <ForensicCell val={data.statutory_compliance.insurance.Valuation_Amount} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                         </td>
                                     </tr>
                                     <tr className="group hover:bg-gray-50 relative">
                                         <td className="py-3 px-2 text-gray-600">Actual Policy Limit</td>
                                         <td className="py-3 px-2 font-medium text-right relative">
-                                            {withAction('ins_pol', 'Policy Amount', <ForensicCell val={data.statutory_compliance.insurance.Policy_Amount} docs={docs} files={files} />)}
+                                            {withAction('ins_pol', 'Policy Amount', <ForensicCell val={data.statutory_compliance.insurance.Policy_Amount} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                         </td>
                                     </tr>
                                     <tr className="border-t-2 border-black group hover:bg-gray-50 relative">
@@ -2222,25 +2282,25 @@ export const AuditReport: React.FC<AuditReportProps> = ({
                                         amount: data.statutory_compliance.income_tax.Interest_Income.amount + data.statutory_compliance.income_tax.Other_Taxable_Income.amount,
                                         source_doc_id: data.statutory_compliance.income_tax.Interest_Income.source_doc_id,
                                         page_ref: "Combined Calc"
-                                    }} docs={docs} files={files} /></>)}
+                                    }} docs={docs} files={files} getPdfUrl={getPdfUrl} /></>)}
                                 </td>
                             </tr>
                             <tr className="group hover:bg-gray-50 relative">
                                 <td className="py-2 px-2 text-gray-600">Less: Deductions</td>
                                 <td className="py-2 px-2 text-right text-gray-800 relative">
-                                    {withAction('tax_ded', 'Tax Deductions', <>(<ForensicCell val={data.statutory_compliance.income_tax.Tax_Deductions} docs={docs} files={files} />)</>)}
+                                    {withAction('tax_ded', 'Tax Deductions', <>(<ForensicCell val={data.statutory_compliance.income_tax.Tax_Deductions} docs={docs} files={files} getPdfUrl={getPdfUrl} />)</>)}
                                 </td>
                             </tr>
                             <tr className="bg-gray-50 border-y border-gray-200 group hover:bg-gray-100 relative">
                                 <td className="py-3 px-2 font-bold text-black">Taxable Income</td>
                                 <td className="py-3 px-2 text-right font-bold relative">
-                                    {withAction('tax_net', 'Taxable Income', <ForensicCell val={data.statutory_compliance.income_tax.Net_Taxable} docs={docs} files={files} />)}
+                                    {withAction('tax_net', 'Taxable Income', <ForensicCell val={data.statutory_compliance.income_tax.Net_Taxable} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             <tr className="group hover:bg-gray-50 relative">
                                 <td className="py-3 px-2 font-bold text-gray-700">Tax Payable (@ 25%)</td>
                                 <td className="py-3 px-2 text-right font-bold relative">
-                                    {withAction('tax_pay', 'Tax Payable', <ForensicCell val={data.statutory_compliance.income_tax.Calc_Tax} docs={docs} files={files} />)}
+                                    {withAction('tax_pay', 'Tax Payable', <ForensicCell val={data.statutory_compliance.income_tax.Calc_Tax} docs={docs} files={files} getPdfUrl={getPdfUrl} />)}
                                 </td>
                             </tr>
                             <tr>

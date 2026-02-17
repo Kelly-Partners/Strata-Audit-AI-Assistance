@@ -6,7 +6,6 @@ import { FileUpload } from './components/FileUpload';
 import { AuditReport } from './components/AuditReport';
 import { ReportSkeleton } from './components/ReportSkeleton';
 import { callExecuteFullReview } from './services/gemini';
-import { mergeAiAttemptUpdates } from './services/mergeAiAttemptUpdates';
 import { buildAiAttemptTargets, buildSystemTriageItems, mergeTriageWithSystem, AREA_DISPLAY, AREA_ORDER } from './src/audit_engine/ai_attempt_targets';
 import { auth, db, storage, hasValidFirebaseConfig } from './services/firebase';
 import { uploadPlanFiles, uploadAdditionalRunFiles, savePlanToFirestore, deletePlanFilesFromStorage, deletePlanFromFirestore, getPlansFromFirestore, loadPlanFilesFromStorage, subscribePlanDoc } from './services/planPersistence';
@@ -211,7 +210,7 @@ const App: React.FC = () => {
     return unsub;
   }, [activePlanId, firebaseUser?.uid, hasValidFirebaseConfig]);
 
-  // Load files from Storage when user selects a plan that has filePaths but no local files (e.g. after refresh)
+  // Optional: load file blobs from Storage for UX (e.g. display names). Run handlers use filePaths from Firestore as single source of truth, so this is not required for running.
   useEffect(() => {
     if (!firebaseUser || !activePlan?.filePaths?.length || activePlan.files.length > 0) return;
     let cancelled = false;
@@ -391,7 +390,9 @@ const App: React.FC = () => {
       updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
-    if (targetPlan.files.length === 0) {
+    const hasPaths = (targetPlan.filePaths?.length ?? 0) > 0;
+    const hasFiles = targetPlan.files.length > 0;
+    if (!hasPaths && !hasFiles) {
       updatePlan(planId, { error: "No evidence files found." });
       return;
     }
@@ -405,9 +406,9 @@ const App: React.FC = () => {
     setIsCreateModalOpen(false);
     const userId = firebaseUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
-    let filePaths: string[] = [];
+    let filePaths: string[] = targetPlan.filePaths ?? [];
     try {
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files!);
+      if (hasFiles) filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files!);
       const runPhase = (phase: "levy" | "phase4" | "expenses" | "compliance") =>
         callExecuteFullReview({
           filePaths,
@@ -472,7 +473,9 @@ const App: React.FC = () => {
       updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
-    if (targetPlan.files.length === 0) {
+    const hasPaths = (targetPlan.filePaths?.length ?? 0) > 0;
+    const hasFiles = targetPlan.files.length > 0;
+    if (!hasPaths && !hasFiles) {
       updatePlan(planId, { error: "No evidence files found." });
       return;
     }
@@ -490,6 +493,8 @@ const App: React.FC = () => {
       return;
     }
     const targets = buildAiAttemptTargets(mergedSoFar, targetPlan.triage);
+    let filePaths: string[] = targetPlan.filePaths ?? [];
+    if (hasFiles) filePaths = await uploadPlanFiles(storage, firebaseUser.uid, planId, targetPlan.files);
     if (targets.length === 0) {
       updatePlan(planId, { error: "No items to re-verify. Add items in the AI Attempt tab (or flag rows in report), then run." });
       return;
@@ -499,10 +504,11 @@ const App: React.FC = () => {
     setIsCreateModalOpen(false);
     const userId = firebaseUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
-    let filePaths: string[] = targetPlan.filePaths ?? [];
     try {
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
-      updatePlan(planId, { filePaths });
+      if (hasFiles) {
+        filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+        updatePlan(planId, { filePaths });
+      }
       const res = await callExecuteFullReview({
         filePaths,
         expectedPlanId: planId,
@@ -511,10 +517,10 @@ const App: React.FC = () => {
         aiAttemptTargets: targets,
         fileMeta: targetPlan.fileMeta,
       });
-      const resJson = res as { ai_attempt_updates?: unknown; ai_attempt_resolution_table?: { item?: string; issue_identified?: string; ai_attempt_conduct?: string; result?: string; status?: string }[] };
-      const updates = resJson?.ai_attempt_updates;
+      const resJson = res as { ai_attempt_resolution_table?: { item?: string; issue_identified?: string; ai_attempt_conduct?: string; result?: string; status?: string }[] };
+      // Keep report unchanged – only attach AI explanation (resolution table + history). Do not merge ai_attempt_updates.
       const effectiveResult = { ...mergedSoFar, expense_samples: getEffectiveExpenseSamples(mergedSoFar) };
-      const merged = mergeAiAttemptUpdates(effectiveResult, updates ?? null);
+      const merged = { ...effectiveResult };
       const AI_ATTEMPT_STATUS_ALLOWED = new Set(["VERIFIED", "VARIANCE", "PASS", "FAIL", "RISK_FLAG", "MISSING_BANK_STMT", "TIER_3_ONLY", "MISSING_LEVY_REPORT", "MISSING_BREAKDOWN", "NO_SUPPORT", "AUTHORISED", "UNAUTHORISED", "NO_MINUTES_FOUND", "MINUTES_NOT_AVAILABLE", "N/A"]);
       let resolutionTable: Array<{ item: string; issue_identified: string; ai_attempt_conduct: string; result: string; status: string }>;
       if (Array.isArray(resJson?.ai_attempt_resolution_table) && resJson.ai_attempt_resolution_table.length > 0) {
@@ -527,8 +533,8 @@ const App: React.FC = () => {
         resolutionTable = targets.map((t) => ({
           item: t.description,
           issue_identified: t.source === "triage" ? "User flagged" : t.description,
-          ai_attempt_conduct: "(Merged into report – see updated Levy/BS/Expense/Compliance sections)",
-          result: "Patched",
+          ai_attempt_conduct: "(Explanation only – report sections unchanged)",
+          result: "See AI Attempt tab for findings",
           status: "–",
         }));
         merged.ai_attempt_resolution_table = resolutionTable;
@@ -652,7 +658,9 @@ const App: React.FC = () => {
       updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
-    if (targetPlan.files.length === 0) {
+    const hasPaths = (targetPlan.filePaths?.length ?? 0) > 0;
+    const hasFiles = targetPlan.files.length > 0;
+    if (!hasPaths && !hasFiles) {
       updatePlan(planId, { error: "No evidence files found." });
       return;
     }
@@ -661,9 +669,9 @@ const App: React.FC = () => {
     setIsCreateModalOpen(false);
     const userId = firebaseUser.uid;
     const baseDoc = { userId, name: targetPlan.name, createdAt: targetPlan.createdAt };
-    let filePaths: string[] = [];
+    let filePaths: string[] = targetPlan.filePaths ?? [];
     try {
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+      if (hasFiles) filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
       const auditResult = await callExecuteFullReview({
         filePaths,
         expectedPlanId: planId,
@@ -699,7 +707,9 @@ const App: React.FC = () => {
       updatePlan(planId, { error: "Please sign in to run the audit." });
       return;
     }
-    if (targetPlan.files.length === 0) {
+    const hasPaths = (targetPlan.filePaths?.length ?? 0) > 0;
+    const hasFiles = targetPlan.files.length > 0;
+    if (!hasPaths && !hasFiles) {
       updatePlan(planId, { error: "No evidence files found." });
       return;
     }
@@ -714,10 +724,10 @@ const App: React.FC = () => {
       name: targetPlan.name,
       createdAt: targetPlan.createdAt,
     };
-    let filePaths: string[] = [];
+    let filePaths: string[] = targetPlan.filePaths ?? [];
 
     try {
-      filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
+      if (hasFiles) filePaths = await uploadPlanFiles(storage, userId, planId, targetPlan.files);
 
       // 2) 调用 Cloud Function 执行审计
       const auditResult = await callExecuteFullReview({
@@ -1303,6 +1313,8 @@ const App: React.FC = () => {
                   <AuditReport
                     data={activePlan.result}
                     files={activePlan.files}
+                    filePaths={activePlan.filePaths ?? []}
+                    storage={storage}
                     triageItems={activePlan.triage}
                     userResolutions={activePlan.user_resolutions ?? []}
                     aiAttemptHistory={activePlan.ai_attempt_history ?? []}
