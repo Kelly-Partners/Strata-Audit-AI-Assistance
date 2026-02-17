@@ -6,12 +6,12 @@
 App.tsx
   └─ callExecuteFullReview() from services/gemini.ts
        └─ buildSystemPrompt() from src/audit_engine
-       └─ body: { systemPrompt, fileManifest, files, ... }
+       └─ body: { systemPrompt, filePaths, planId, userId, ... }   # 后端从 Storage 拉取文件
   └─ POST → Cloud Function executeFullReview
 
 functions/index.js
-  └─ body.systemPrompt 必须存在
-  └─ executeFullReview({ apiKey, systemPrompt, fileManifest, files, previousAudit })
+  └─ body.systemPrompt、body.filePaths 必须存在
+  └─ 从 Storage 拉取文件 → 构建 fileManifest、files → executeFullReview({ apiKey, systemPrompt, fileManifest, files, previousAudit })
 
 functions/geminiReview.js
   └─ config.systemInstruction = systemPrompt  (作为 Gemini system prompt)

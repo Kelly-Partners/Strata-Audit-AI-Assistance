@@ -3,6 +3,7 @@
  */
 export {
   uploadPlanFiles,
+  uploadAdditionalRunFiles,
   loadPlanFilesFromStorage,
   deletePlanFilesFromStorage,
 } from "../src/services/azure-storage";

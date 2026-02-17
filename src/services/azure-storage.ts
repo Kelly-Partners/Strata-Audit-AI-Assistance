@@ -54,22 +54,57 @@ export async function uploadPlanFiles(
 }
 
 /**
+ * Upload additional run files (supplementary evidence for expense vouching).
+ * userId parameter is kept for backward compatibility but is ignored —
+ * the server extracts it from the Bearer token.
+ */
+export async function uploadAdditionalRunFiles(
+  _userId: string,
+  planId: string,
+  runId: string,
+  files: File[]
+): Promise<string[]> {
+  const filesPayload = await Promise.all(
+    files.map(async (f, i) => ({
+      name: safeFileName(f.name, i),
+      data: await fileToBase64(f),
+      mimeType: f.type || "application/pdf",
+    }))
+  );
+
+  const res = await apiFetch(`/plans/${planId}/files`, {
+    method: "POST",
+    body: JSON.stringify({ files: filesPayload, runId }),
+  });
+
+  const json = (await res.json()) as { filePaths: string[] };
+  return json.filePaths;
+}
+
+/**
  * Load plan files from Azure Function → Blob Storage.
  * Downloads blobs and converts to File objects for PDF preview.
+ * Optionally includes additional run files if provided.
  */
 export async function loadPlanFilesFromStorage(
-  filePaths: string[]
+  filePaths: string[],
+  additionalRuns?: { file_paths: string[] }[]
 ): Promise<File[]> {
-  if (!filePaths?.length) return [];
+  // Merge initial file paths with any additional run file paths
+  const allPaths = [
+    ...(filePaths || []),
+    ...(additionalRuns?.flatMap((r) => r.file_paths || []) || []),
+  ];
+  if (!allPaths.length) return [];
 
   // Extract planId from the first path: users/{userId}/plans/{planId}/{fileName}
-  const parts = filePaths[0].split("/");
+  const parts = allPaths[0].split("/");
   const planId = parts[3]; // index 3 is planId
   if (!planId) return [];
 
   const res = await apiFetch(`/plans/${planId}/files/load`, {
     method: "POST",
-    body: JSON.stringify({ filePaths }),
+    body: JSON.stringify({ filePaths: allPaths }),
   });
 
   const json = (await res.json()) as {

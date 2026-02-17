@@ -1,11 +1,11 @@
 /**
- * Phase 1 – 具体 item 的细化规则与指导（如 receipt 的优先级、白名单证据链）。
- * 在此增加/修改规则后，PHASE_1_RULES_PROMPT 会注入到 system prompt，供 Kernel 遵循。
+ * Phase 1 – Item-level rules and guidance (e.g. receipt evidence priority, whitelist evidence chain).
+ * Changes here are injected via PHASE_1_RULES_PROMPT into the system prompt for the Kernel to follow.
  */
 
 import type { PhaseItemRule, PhaseRulesMap } from "./types";
 
-/** Phase 1 各 item 的规则定义 */
+/** Phase 1 item rules definition */
 export const PHASE_1_ITEM_RULES: PhaseRulesMap = {
   receipt: {
     evidencePriority: {
@@ -40,7 +40,7 @@ export const PHASE_1_ITEM_RULES: PhaseRulesMap = {
   },
 };
 
-/** 将 Phase 1 的 item 规则格式化为注入 system prompt 的文本 */
+/** Format Phase 1 item rules into text injected into the system prompt */
 function formatPhase1RulesPrompt(): string {
   const lines: string[] = [
     "",

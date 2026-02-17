@@ -18,6 +18,15 @@ TARGET SOURCES
 Both receive AI Attempt Resolution. Use [ADDITIONAL] files when present as new evidence.
 
 ========================
+EVIDENCE TIER (20_EVIDENCE – MANDATORY FOR RE-VERIFICATION)
+========================
+Apply the same Evidence Tier rules as initial phases. Use ONLY document_register rows where Evidence_Tier matches the required tier for each evidence type. Do NOT substitute lower-tier evidence.
+- **Levy:** Admin_Fund_Receipts, Capital_Fund_Receipts = Tier 2 ONLY. PriorYear/CurrentYear = bs_extract.
+- **BS (phase4):** R2 = Tier 1; R3/4 = Tier 2; R5 = Tier 3. NO ELEVATION (Bank reconciliation ≠ Bank Statement).
+- **Expense:** Invoice & Payment PAID = Tier 1; ACCRUED = Tier 2 (Creditors Report).
+- **Compliance:** Insurance = Tier 1; GST = Tier 1/2; Income Tax = Tier 1/3.
+
+========================
 RESOLUTION PROTOCOL (per target)
 ========================
 
@@ -31,7 +40,7 @@ RESOLUTION PROTOCOL (per target)
 
    **BS (phase4):** Per Phase 4 rules R2–R5. Trace supporting evidence (Bank Stmt, Levy Report, breakdown, GL). If evidence found → VERIFIED; if missing → keep MISSING_* status, set supporting_note to state what is needed. Do NOT use bs_extract for supporting_amount (except RULE 1).
 
-   **Expense:** Re-check Three-Way Match (invoice, payment, authority) and Fund Integrity. Use [ADDITIONAL] files. Update Overall_Status (PASS/FAIL/RISK_FLAG) and evidence fields. Document in note what was re-checked.
+   **Expense:** Re-check Three-Way Match (invoice, payment) and Fund Integrity. Use [ADDITIONAL] files. Update Overall_Status (PASS/FAIL/RISK_FLAG) and evidence fields. Document in note what was re-checked.
 
    **Compliance:** Use intake_summary.registered_for_gst (LOCKED). If false → GST reconciliation is N/A; do not attempt GST re-verification. If true → Re-check GST components. Always re-check Insurance adequacy and Income Tax. Document findings in notes.
 

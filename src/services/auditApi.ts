@@ -14,8 +14,8 @@ import {
   buildLevyPrompt,
   buildPhase4Prompt,
   buildExpensesPrompt,
+  buildExpensesAdditionalPrompt,
   buildPhase5Prompt,
-  buildPhase6Prompt,
   buildAiAttemptPrompt,
 } from "../audit_engine";
 import type { AuditResponse } from "../audit_outputs/type_definitions";
@@ -41,15 +41,18 @@ const fileToBase64 = (file: File): Promise<string> =>
 
 export interface CallExecuteFullReviewOptions {
   files: File[];
+  filePaths?: string[];
+  additionalRunPaths?: { runId: string; paths: string[] };
   previousAudit?: AuditResponse | null;
   expectedPlanId?: string;
+  user?: { uid: string };
   mode?:
     | "step0_only"
     | "levy"
     | "phase4"
     | "expenses"
+    | "expenses_additional"
     | "compliance"
-    | "completion"
     | "aiAttempt"
     | "full";
   step0Output?: AuditResponse | null;
@@ -66,8 +69,11 @@ export async function callExecuteFullReview(
 ): Promise<AuditResponse> {
   const {
     files,
+    filePaths,
+    additionalRunPaths,
     previousAudit,
     expectedPlanId,
+    user,
     mode = "full",
     step0Output,
     aiAttemptTargets = [],
@@ -113,30 +119,35 @@ export async function callExecuteFullReview(
           ? buildPhase4Prompt()
           : mode === "expenses"
             ? buildExpensesPrompt()
-            : mode === "compliance"
-              ? buildPhase5Prompt()
-              : mode === "completion"
-                ? buildPhase6Prompt()
+            : mode === "expenses_additional"
+              ? buildExpensesAdditionalPrompt()
+              : mode === "compliance"
+                ? buildPhase5Prompt()
                 : mode === "aiAttempt"
                   ? buildAiAttemptPrompt(aiAttemptTargets)
                   : buildSystemPrompt();
 
-  const body = {
+  const body: Record<string, unknown> = {
     files: filesPayload,
+    filePaths,
+    additionalRunPaths,
     expectedPlanId,
+    planId: expectedPlanId,
+    userId: user?.uid,
     systemPrompt,
     fileManifest,
     previousAudit:
       mode === "levy" ||
       mode === "phase4" ||
       mode === "expenses" ||
+      mode === "expenses_additional" ||
       mode === "compliance" ||
-      mode === "completion" ||
       mode === "aiAttempt"
         ? step0Output
         : previousAudit ?? undefined,
     mode,
     aiAttemptTargets: mode === "aiAttempt" ? aiAttemptTargets : undefined,
+    fileMeta,
   };
 
   const res = await fetch(url, {

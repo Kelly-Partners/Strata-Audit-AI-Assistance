@@ -8,6 +8,9 @@ import type { PhaseItemRule, PhaseRulesMap } from "./types";
 export const ASSET_VERIFICATION_RULES_PROMPT = `
 [GATE 2 LOGIC – FULL BALANCE SHEET VERIFICATION] – STRICT ENFORCEMENT
 
+EVIDENCE TIER (20_EVIDENCE – document_register ONLY):
+For each line type, use ONLY document_register rows where Evidence_Tier matches the rule (R2=Tier 1, R3/4=Tier 2, R5=Tier 3). BLACKLIST: FS, Notes, GL when Tier 1/2 required. NO ELEVATION: Tier 2 does NOT substitute for Tier 1 (Bank reconciliation ≠ Bank Statement).
+
 GLOBAL RULES (DO NOT VIOLATE):
 - bs_amount and line_item source = LOCKED bs_extract ONLY (extracted from FS Balance Sheet and locked at Step 0). Do NOT re-read Balance Sheet PDF.
 - supporting_amount source = NON-BS evidence ONLY, per rule (Bank Stmt, Levy Report, breakdown, GL). EXCEPTION: RULE 1 supporting_amount = prior_year from bs_extract.
@@ -42,13 +45,13 @@ Target:
 - Term Deposits
 - Investment Accounts
 
-supporting_amount (MANDATORY – Tier 1 External):
+supporting_amount (MANDATORY – Tier 1 ONLY, from document_register):
 - Bank Statement
 - Term Deposit Statement
 - Bank Balance Confirmation
 
-PROHIBITED:
-- Do NOT use General Ledger as primary support.
+PROHIBITED (BLACKLIST / NO ELEVATION):
+- Do NOT use General Ledger (Tier 3) as primary support. Do NOT use Bank reconciliation (Tier 2) as substitute for Bank Statement.
 
 Status:
 - Tier 1 found & matches → VERIFIED
@@ -62,13 +65,12 @@ Target:
 - Levy Arrears (Assets)
 - Levies in Advance (Assets or Liabilities)
 
-Tier 2 Evidence (Primary):
+Tier 2 Evidence (Primary – from document_register where Evidence_Tier = Tier 2):
 - Levy Position Report
 - Owner Balance / Aged Levies Report
 - Lot-based, date-anchored at FY end
 
-Tier 3 Evidence (Secondary):
-- General Ledger ONLY (reference)
+Tier 3 (Secondary): General Ledger only when Tier 2 not available → TIER_3_ONLY
 
 Status:
 - Tier 2 found & matches → VERIFIED
@@ -84,13 +86,12 @@ Target:
 - Creditors / Unpaid Invoices
 - Prepaid Expenses
 
-Tier 2 Evidence (Primary):
+Tier 2 Evidence (Primary – from document_register where Evidence_Tier = Tier 2):
 - Breakdown-style report
 - Aged Creditors
 - Prepayment Schedule
 
-Tier 3 Evidence:
-- General Ledger ONLY (reference)
+Tier 3 (Secondary): General Ledger only when Tier 2 not available → MISSING_BREAKDOWN
 
 Status:
 - Tier 2 found & matches → VERIFIED
@@ -110,7 +111,7 @@ Target:
   • Other residual items
 
 Action:
-- Verify against General Ledger (Tier 3).
+- Verify against General Ledger (Tier 3 – from document_register where Evidence_Tier = Tier 3).
 
 PROHIBITED:
 - RULE 5 may NOT be used to bypass RULES 2–4.

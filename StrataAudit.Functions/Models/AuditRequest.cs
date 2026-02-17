@@ -28,4 +28,34 @@ public sealed class AuditRequest
 
     [JsonPropertyName("aiAttemptTargets")]
     public List<object>? AiAttemptTargets { get; set; }
+
+    [JsonPropertyName("filePaths")]
+    public List<string>? FilePaths { get; set; }
+
+    [JsonPropertyName("additionalRunPaths")]
+    public AdditionalRunPaths? AdditionalRunPaths { get; set; }
+
+    [JsonPropertyName("planId")]
+    public string? PlanId { get; set; }
+
+    [JsonPropertyName("userId")]
+    public string? UserId { get; set; }
+
+    [JsonPropertyName("fileMeta")]
+    public List<FileMetaEntry>? FileMeta { get; set; }
+}
+
+public sealed class AdditionalRunPaths
+{
+    [JsonPropertyName("runId")]
+    public string RunId { get; set; } = string.Empty;
+
+    [JsonPropertyName("paths")]
+    public List<string> Paths { get; set; } = [];
+}
+
+public sealed class FileMetaEntry
+{
+    [JsonPropertyName("batch")]
+    public string Batch { get; set; } = "initial";
 }

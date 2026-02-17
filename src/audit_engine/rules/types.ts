@@ -1,22 +1,22 @@
 /**
- * 各 Phase 下具体 item 的细化规则类型（优先级、白名单证据链等）。
- * 用于 rules/phase_*_rules.ts 中定义，并生成注入 system prompt 的指导文本。
+ * Phase item-level rule types (priority, whitelist evidence chain, etc.).
+ * Used in rules/phase_*_rules.ts to define rules and generate guidance text for the system prompt.
  */
 
-/** 单条证据在证据链中的优先级（数字越小越优先） */
+/** Evidence priority within the chain (lower number = higher priority) */
 export type EvidencePriority = number;
 
-/** 某 item 的规则：证据优先级、白名单文档类型、必选证据等 */
+/** Rule for a single item: evidence priority, whitelist doc types, required evidence */
 export interface PhaseItemRule {
-  /** 证据类型/来源 → 优先级（1=最高），用于排序与指导“优先采纳” */
+  /** Evidence type/source -> priority (1 = highest), for sorting and prefer-first guidance */
   evidencePriority?: Record<string, EvidencePriority>;
-  /** 白名单：仅接受这些文档类型作为该 item 的有效证据 */
+  /** Whitelist: only these document types are valid evidence for this item */
   whitelistDocTypes?: string[];
-  /** 必选证据类型（缺一不可） */
+  /** Required evidence types (all must be present) */
   requiredEvidenceTypes?: string[];
-  /** 人类可读的指导说明，会注入 prompt */
+  /** Human-readable guidance, injected into the prompt */
   guidance?: string;
 }
 
-/** Phase 下多个 item 的规则集合，key 为 item 名称（如 receipt, agm_minutes） */
+/** Map of item rules for a Phase; key = item name (e.g. receipt, agm_minutes) */
 export type PhaseRulesMap = Record<string, PhaseItemRule>;

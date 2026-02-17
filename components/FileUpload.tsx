@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 interface FileMetaEntry {
   uploadedAt: number;
@@ -10,9 +10,21 @@ interface FileUploadProps {
   selectedFiles: File[];
   fileMeta?: FileMetaEntry[];
   planCreatedAt?: number;
+  /** Number of files that cannot be removed (submitted/persisted). Files at index < lockedCount are greyed out and have no remove button. */
+  lockedCount?: number;
+  /** Show helper text about add-only policy (e.g. when plan has submitted files) */
+  showAddOnlyHint?: boolean;
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selectedFiles, fileMeta, planCreatedAt }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({
+  onFilesSelected,
+  selectedFiles,
+  fileMeta,
+  planCreatedAt,
+  lockedCount = 0,
+  showAddOnlyHint = false,
+}) => {
+  const inputId = useId();
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
       const newFiles = Array.from(event.target.files);
@@ -21,20 +33,23 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
   };
 
   const removeFile = (index: number) => {
+    if (index < lockedCount) return;
     const newFiles = selectedFiles.filter((_, i) => i !== index);
     onFilesSelected(newFiles);
   };
+
+  const isLocked = (index: number) => index < lockedCount;
 
   return (
     <div className="w-full">
       <div className="flex items-center justify-center w-full">
         <label
-          htmlFor="dropzone-file"
+          htmlFor={inputId}
           className="flex flex-col items-center justify-center w-full h-40 border-2 border-gray-300 border-dashed rounded cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors group"
         >
           <div className="flex flex-col items-center justify-center pt-5 pb-6">
             <svg
-              className="w-10 h-10 mb-4 text-gray-400 group-hover:text-[#C5A059] transition-colors"
+              className="w-10 h-10 mb-4 text-gray-400 group-hover:text-[#004F9F] transition-colors"
               aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -48,13 +63,18 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
                 d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
               />
             </svg>
-            <p className="mb-2 text-xs text-gray-600 font-bold uppercase tracking-wider">
-              <span className="text-[#C5A059]">CLICK TO UPLOAD</span> EVIDENCE
+            <p className="mb-2 text-caption text-gray-600 font-bold uppercase tracking-wider">
+              <span className="text-[#004F9F]">CLICK TO UPLOAD</span> EVIDENCE
             </p>
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest">PDF, XLSX, CSV (Max 10MB)</p>
+            <p className="text-micro text-gray-400 uppercase tracking-widest">PDF, XLSX, CSV (Max 10MB)</p>
+            {showAddOnlyHint && (
+              <p className="mt-2 text-micro text-amber-600 max-w-xs text-center">
+                You can add more files. Submitted files cannot be removed (to preserve audit links).
+              </p>
+            )}
           </div>
           <input
-            id="dropzone-file"
+            id={inputId}
             type="file"
             multiple
             className="hidden"
@@ -71,34 +91,46 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected, selecte
             const uploadTime = new Date(meta.uploadedAt).toLocaleString('en-AU', { 
               day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
             });
+            const locked = isLocked(index);
             return (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded shadow-sm hover:border-[#C5A059] transition-colors group"
+                className={`flex items-center justify-between p-3 rounded shadow-sm transition-colors group ${
+                  locked
+                    ? 'bg-gray-100 border border-gray-200 opacity-75'
+                    : 'bg-white border border-gray-200 hover:border-[#004F9F]'
+                }`}
+                title={locked ? 'Submitted – cannot be removed (preserves audit links)' : undefined}
               >
                 <div className="flex items-center space-x-3 flex-1 min-w-0">
-                  <span className="text-[10px] bg-[#C5A059] text-black px-1.5 py-0.5 font-bold uppercase tracking-widest rounded-sm shrink-0">
+                  <span className={`text-micro px-1.5 py-0.5 font-bold uppercase tracking-widest rounded-sm shrink-0 ${
+                    locked ? 'bg-gray-400 text-white' : 'bg-[#004F9F] text-white'
+                  }`}>
                     {file.name.split('.').pop()?.toUpperCase()}
                   </span>
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-xs text-gray-800 font-medium truncate">{file.name}</span>
+                    <span className={`text-caption font-medium truncate ${locked ? 'text-gray-600' : 'text-gray-800'}`}>{file.name}</span>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
-                        meta.batch === 'initial' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                      <span className={`text-tiny px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
+                        meta.batch === 'initial'
+                          ? locked ? 'bg-gray-200 text-gray-600' : 'bg-blue-100 text-blue-800'
+                          : 'bg-purple-100 text-purple-800'
                       }`}>
                         {meta.batch === 'initial' ? 'Initial' : 'Additional'}
                       </span>
-                      <span className="text-[10px] text-gray-400 font-mono">{uploadTime}</span>
+                      <span className="text-micro text-gray-400 font-mono">{uploadTime}</span>
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => removeFile(index)}
-                  className="text-gray-400 hover:text-red-600 p-1 transition-colors shrink-0"
-                  title="Remove file"
-                >
-                  ✕
-                </button>
+                {!locked && (
+                  <button
+                    onClick={() => removeFile(index)}
+                    className="text-gray-400 hover:text-red-600 p-1 transition-colors shrink-0"
+                    title="Remove file"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             );
           })}

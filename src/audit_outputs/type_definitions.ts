@@ -22,9 +22,9 @@ export interface IntakeSummary {
   strata_plan?: string;
   /** Financial Year – extracted from minutes/financials (format DD/MM/YYYY - DD/MM/YYYY or DD/MM/YYYY); used as global FY for all phases */
   financial_year?: string;
-  /** Manager spending limit (single transaction) – from Strata Agency Agreement or Committee Minutes; used for Phase 3 Authority Tier 1 */
+  /** Manager spending limit – from Strata Agency Agreement or Committee Minutes; used for Phase 3 Step A (MATERIALITY, SPLIT_PATTERN) when available */
   manager_limit?: number;
-  /** AGM-approved limit above which General Meeting approval required – from AGM Minutes; used for Phase 3 Authority Tier 2/3 */
+  /** AGM-approved limit – from AGM Minutes; used for Phase 3 Step A (SPLIT_PATTERN) when available */
   agm_limit?: number;
   /** True when FY cannot be determined or BS year mapping is ambiguous – boundary not reliably defined */
   boundary_defined?: boolean;
@@ -50,6 +50,7 @@ export interface MinutesRef {
 /** Step 0: Core data positions – lock document/page locations for Phase 2/4/3 */
 export interface CoreDataPositions {
   balance_sheet?: DocLocation | null;
+  income_and_expenditure?: DocLocation | null;
   bank_statement?: DocLocation | null;
   levy_report?: DocLocation | null;
   levy_receipts_admin?: DocLocation | null;
@@ -87,6 +88,22 @@ export interface BsExtract {
   rows: BsExtractRow[];
 }
 
+/** Step 0: Income & Expenditure (P&L) line item – same structure as bs_extract rows */
+export interface PlExtractRow {
+  line_item: string;
+  section?: "INCOME" | "EXPENDITURE" | "SURPLUS_DEFICIT";
+  fund?: string;
+  prior_year: number;
+  current_year: number;
+}
+
+/** Step 0: Full Income & Expenditure extract – LOCKED single source for Phase 3/6 P&L-derived data */
+export interface PlExtract {
+  prior_year_label: string;
+  current_year_label: string;
+  rows: PlExtractRow[];
+}
+
 export interface TraceableValue {
   amount: number;
   source_doc_id: string;
@@ -117,8 +134,16 @@ export interface LevyRecMaster {
   Spec_Levy_Admin: TraceableValue;
   Spec_Levy_Sink: TraceableValue;
   Spec_Levy_Total: TraceableValue;
-  Plus_Interest_Chgd: TraceableValue;
-  Less_Discount_Given: TraceableValue;
+  Plus_Interest_Chgd_Admin?: TraceableValue;
+  Plus_Interest_Chgd_Sink?: TraceableValue;
+  Plus_Interest_Chgd_Total?: TraceableValue;
+  Less_Discount_Given_Admin?: TraceableValue;
+  Less_Discount_Given_Sink?: TraceableValue;
+  Less_Discount_Given_Total?: TraceableValue;
+  /** @deprecated – use Plus_Interest_Chgd_Admin/Sink/Total; kept for backward compat */
+  Plus_Interest_Chgd?: TraceableValue;
+  /** @deprecated – use Less_Discount_Given_Admin/Sink/Total; kept for backward compat */
+  Less_Discount_Given?: TraceableValue;
   Plus_Legal_Recovery: TraceableValue;
   Plus_Other_Recovery: TraceableValue;
   Sub_Admin_Net: TraceableValue;
@@ -126,7 +151,9 @@ export interface LevyRecMaster {
   Total_Levies_Net: TraceableValue;
   GST_Admin: TraceableValue;
   GST_Sink: TraceableValue;
-  GST_Special: TraceableValue;
+  GST_Special_Admin?: TraceableValue;
+  GST_Special_Sink?: TraceableValue;
+  GST_Special?: TraceableValue;
   Total_GST_Raised: TraceableValue;
   Total_Gross_Inc: TraceableValue;
   /** Administrative Fund receipts for the audit FY (Admin & Capital Actual Payments method) */
@@ -193,11 +220,22 @@ export interface VerificationStep {
 }
 
 /** Phase 3 v2: Risk-based expense – why this item was selected */
+export type SelectionDimension =
+  | "VALUE_COVERAGE"
+  | "RISK_KEYWORD"
+  | "MATERIALITY"
+  | "ANOMALY_DESCRIPTION"
+  | "SPLIT_PATTERN"
+  | "RECURRING_NEAR_LIMIT"
+  | "OTHER";
+
 export interface ExpenseRiskProfile {
   is_material: boolean;
   risk_keywords: string[];
   is_split_invoice: boolean;
   selection_reason: string;
+  /** Primary dimension for UI grouping – assign one per item. Use OTHER when unclear. */
+  selection_dimension?: SelectionDimension;
 }
 
 /** Optional forensic evidence for expense pillars (Source Doc, Doc ID, Context/Note, View in PDF). */
@@ -209,15 +247,57 @@ export interface ExpenseEvidenceRef {
   extracted_amount?: number;
 }
 
-/** Phase 3 v2: Three-way match (Invoice / Payment / Authority) */
+/** Invoice sub-check: passed + evidence + observed value for forensic trace. */
+export interface InvoiceCheckItem {
+  passed: boolean;
+  evidence?: ExpenseEvidenceRef;
+  /** Observed value from document for audit trail, e.g. "Invoice $1100 vs GL $1100; within tolerance" */
+  observed?: string;
+}
+
+/** Invoice checks: each sub-check REQUIRED with pass + evidence (for Forensic). */
+export interface InvoiceChecks {
+  sp_number: InvoiceCheckItem;
+  address: InvoiceCheckItem;
+  amount: InvoiceCheckItem;
+  gst_verified: InvoiceCheckItem;
+  payee_match: InvoiceCheckItem;
+  abn_valid: InvoiceCheckItem;
+}
+
+/** Payment sub-check: passed + evidence + observed value (same structure as Invoice). */
+export interface PaymentCheckItem {
+  passed: boolean;
+  evidence?: ExpenseEvidenceRef;
+  /** Observed value for audit trail, e.g. "Bank $1100 vs GL $1100; payee ABC Pty Ltd" */
+  observed?: string;
+}
+
+/** Payment checks: each sub-check REQUIRED. PAID: bank/ref/dup/split/date + ageing/subsequent N/A. ACCRUED: payee/amount/ageing/subsequent + others N/A. */
+export interface PaymentChecks {
+  bank_account_match: PaymentCheckItem;
+  payee_match: PaymentCheckItem;
+  amount_match: PaymentCheckItem;
+  reference_traceable: PaymentCheckItem;
+  duplicate_check: PaymentCheckItem;
+  split_payment_check: PaymentCheckItem;
+  date_match: PaymentCheckItem;
+  ageing_reasonableness: PaymentCheckItem;
+  subsequent_payment_check: PaymentCheckItem;
+}
+
+/** Phase 3 v2: Three-way match (Invoice / Payment). Authority removed – optional for backward compat. */
 export interface ThreeWayMatch {
   invoice: {
     id: string;
     date: string;
+    /** Per-check pass + evidence – REQUIRED. Each check links to PDF. */
+    checks: InvoiceChecks;
+    /** Top-level summary – keep for backward compat and quick status. */
     payee_match: boolean;
     abn_valid: boolean;
     addressed_to_strata: boolean;
-    /** Forensic: Doc ID / page and context for Evidence Chain popover. */
+    /** Legacy forensic – fallback when checks absent. */
     evidence?: ExpenseEvidenceRef;
   };
   payment: {
@@ -226,15 +306,17 @@ export interface ThreeWayMatch {
     amount_match: boolean;
     source_doc?: string;
     creditors_ref?: string;
+    /** Per-check pass + evidence – REQUIRED. Same granularity as invoice. */
+    checks: PaymentChecks;
     /** Forensic: page_ref and context for Evidence Chain popover. source_doc used as Doc ID when evidence not set. */
     evidence?: ExpenseEvidenceRef;
   };
-  authority: {
+  /** @deprecated Authority removed from Phase 3. Kept optional for backward compat with old data. */
+  authority?: {
     required_tier: "MANAGER" | "COMMITTEE" | "GENERAL_MEETING";
     limit_applied: number;
     minute_ref?: string;
     status: "AUTHORISED" | "UNAUTHORISED" | "NO_MINUTES_FOUND" | "MINUTES_NOT_AVAILABLE";
-    /** Forensic: Doc ID / page and context for Evidence Chain popover. */
     evidence?: ExpenseEvidenceRef;
   };
 }
@@ -247,6 +329,18 @@ export interface FundIntegrity {
   note?: string;
   /** Forensic: Doc ID / page for Evidence Chain popover (e.g. GL or invoice doc). */
   evidence?: ExpenseEvidenceRef;
+}
+
+/** Expense run – initial or additional. Enables multi-round evidence supplement without overwriting. */
+export interface ExpenseRun {
+  run_id: string;
+  run_type: "initial" | "additional";
+  created_at: string;
+  /** For additional runs: Storage paths for this run's files */
+  file_paths?: string[];
+  /** For additional runs: Document_IDs from document_register for this run's new files */
+  document_ids?: string[];
+  expense_samples: ExpenseSample[];
 }
 
 /** Phase 3 v2: Audit Evidence Package (risk-based sampling + three-way match + fund integrity). New fields optional for backward compat with old expense_samples. */
@@ -345,9 +439,14 @@ export interface AuditResponse {
   bs_structure?: BsStructureItem[] | null;
   /** Step 0: Full BS extract – single source of truth for Phase 2/4/5. Use prior_year/current_year from rows. */
   bs_extract?: BsExtract | null;
+  /** Step 0: Full Income & Expenditure (P&L) extract – LOCKED for Phase 3/6. Same year mapping as bs_extract. */
+  pl_extract?: PlExtract | null;
   levy_reconciliation?: LevyReconciliation;
   assets_and_cash?: AssetsAndCash;
+  /** Legacy: flat expense_samples. Prefer expense_runs when present. */
   expense_samples?: ExpenseSample[];
+  /** Phase 3 multi-round: initial + additional runs. UI uses combined view. */
+  expense_runs?: ExpenseRun[];
   statutory_compliance?: StatutoryCompliance;
   completion_outputs?: CompletionOutputs;
   /** AI Attempt: Resolution table (Items, Issue identified, AI Attempt conduct, Result, Status) */
@@ -363,6 +462,13 @@ export interface AiAttemptResolutionRow {
   status: string;
 }
 
+/** Audit trail: one entry per Run AI Attempt */
+export interface AiAttemptHistoryEntry {
+  timestamp: number;
+  targetCount: number;
+  resolutionTable: AiAttemptResolutionRow[];
+}
+
 export interface TriageItem {
   id: string;
   rowId: string;
@@ -371,6 +477,27 @@ export interface TriageItem {
   comment: string;
   severity: "low" | "medium" | "critical";
   timestamp: number;
+  /** System-auto from Phase 2-5 non-reconciled; user = manually flagged */
+  source?: "system" | "user";
+}
+
+/** User resolution – Resolved / Flag / Override with required comment. Shared by Triage & AI Attempt. */
+export type ResolutionType = "Resolved" | "Flag" | "Override";
+
+export interface UserResolution {
+  itemKey: string;
+  resolutionType: ResolutionType;
+  comment: string;
+  resolvedAt: number;
+  resolvedBy?: string;
+}
+
+/** @deprecated Use UserResolution. Kept for backward compat. */
+export interface UserOverride {
+  itemKey: string;
+  signedOffAt: number;
+  signedOffBy?: string;
+  note?: string;
 }
 
 export type PlanStatus = "idle" | "processing" | "completed" | "failed";
@@ -379,6 +506,14 @@ export type PlanStatus = "idle" | "processing" | "completed" | "failed";
 export interface FileMetaEntry {
   uploadedAt: number;
   batch: "initial" | "additional";
+}
+
+/** Additional run metadata – one per "Add Evidence for Vouching" run */
+export interface AdditionalRunMeta {
+  run_id: string;
+  file_paths: string[];
+  document_ids?: string[];
+  created_at: number;
 }
 
 export interface Plan {
@@ -393,5 +528,13 @@ export interface Plan {
   fileMeta?: FileMetaEntry[];
   result: AuditResponse | null;
   triage: TriageItem[];
+  /** User resolutions – Resolved/Flag/Override with comment. Shared by Triage & AI Attempt. Items move to Completion. */
+  user_resolutions?: UserResolution[];
+  /** @deprecated Use user_resolutions */
+  user_overrides?: UserOverride[];
+  /** Audit trail: one entry per Run AI Attempt (for traceability) */
+  ai_attempt_history?: AiAttemptHistoryEntry[];
+  /** Additional evidence runs for expense vouching (multi-round supplement) */
+  additional_runs?: AdditionalRunMeta[];
   error: string | null;
 }

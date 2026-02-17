@@ -8,9 +8,8 @@ import { EVIDENCE_RULES_PROMPT } from "./kernel/20_evidence_rules";
 import { PHASE_2_RULES_PROMPT, PHASE_4_RULES_PROMPT } from "./rules";
 import { PHASE_2_REVENUE_PROMPT } from "./workflow/phase_2_revenue";
 import { PHASE_4_ASSETS_PROMPT } from "./workflow/phase_4_assets";
-import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY } from "./workflow/phase_3_expenses";
+import { PHASE_3_EXPENSES_PROMPT, EXPENSE_RISK_FRAMEWORK, PHASE_3_FUND_INTEGRITY, PHASE_3_ADDITIONAL_PROMPT } from "./workflow/phase_3_expenses";
 import { PHASE_5_COMPLIANCE_PROMPT } from "./workflow/phase_5_compliance";
-import { PHASE_6_COMPLETION_PROMPT } from "./workflow/phase_6_completion";
 import { PHASE_AI_ATTEMPT_PROMPT } from "./workflow/phase_ai_attempt";
 import { MODULE_50_OUTPUTS_PROMPT } from "../audit_outputs/output_registry";
 
@@ -34,6 +33,17 @@ You must return a JSON object with a single key "assets_and_cash" containing bal
 See MODULE 50 for the full assets_and_cash structure. Apply Phase 4 rules R1–R5 strictly. supporting_amount per R2–R5.
 `;
 
+/** Expenses additional output: document_register (merged) + expense_samples_additional (re-vouched items only) */
+const EXPENSES_ADDITIONAL_OUTPUT_SCHEMA = `
+--- OUTPUT: Return document_register AND expense_samples_additional ---
+You must return a JSON object with TWO keys:
+
+1) "document_register" – MERGED array (existing rows + new rows for attached files). Assign Document_ID for new files (continue numbering, e.g. Sys_007).
+2) "expense_samples_additional" – array of expense items that were re-vouched using the new evidence. Same structure as expense_samples (GL_ID, GL_Date, GL_Payee, GL_Amount, Risk_Profile, Three_Way_Match, Fund_Integrity, Overall_Status). Include ONLY items where new evidence was matched and used.
+
+Do NOT return items that had no new evidence.
+`;
+
 /** Expenses-only output: return expense_samples (Phase 3 v2 risk-based structure) */
 const EXPENSES_OUTPUT_SCHEMA = `
 --- OUTPUT: Return ONLY expense_samples ---
@@ -46,15 +56,8 @@ See MODULE 50 for the full expense_samples (Phase 3 v2) structure. Apply EXPENSE
 const PHASE5_OUTPUT_SCHEMA = `
 --- OUTPUT: Return ONLY statutory_compliance ---
 You must return a JSON object with a single key "statutory_compliance" containing { insurance, gst_reconciliation, income_tax }.
-See MODULE 50 for the full statutory_compliance structure. Insurance adequacy, GST roll-forward, Income Tax.
+See MODULE 50 for the full statutory_compliance structure. Apply Evidence Tier: Insurance = Tier 1 ONLY; GST = Tier 1/2; Income Tax = Tier 1/3.
 - gst_reconciliation: Use intake_summary.registered_for_gst (LOCKED). If false or absent → all amounts = 0, GST_Materiality = "N/A – Plan not registered for GST (per Step 0)". If true → full GST roll-forward.
-`;
-
-/** Phase 6 only output: return completion_outputs */
-const PHASE6_OUTPUT_SCHEMA = `
---- OUTPUT: Return ONLY completion_outputs ---
-You must return a JSON object with a single key "completion_outputs" containing { issue_register, boundary_disclosure }.
-See MODULE 50 for the full completion_outputs structure. Aggregate issues from audit findings; document unresolved areas.
 `;
 
 export function buildPhase5Prompt(): string {
@@ -98,7 +101,7 @@ You must return a JSON object with TWO keys:
 - issue_identified: what was wrong before (from Phase output or user triage note)
 - ai_attempt_conduct: what you checked / did during this AI Attempt
 - result: human-readable outcome
-- status: final status for merge (use existing status values)
+- status: MUST be exactly one of these (no other values): VERIFIED, VARIANCE, PASS, FAIL, RISK_FLAG, MISSING_BANK_STMT, TIER_3_ONLY, MISSING_LEVY_REPORT, MISSING_BREAKDOWN, NO_SUPPORT, AUTHORISED, UNAUTHORISED, NO_MINUTES_FOUND, MINUTES_NOT_AVAILABLE, N/A
 `;
 
 export function buildAiAttemptPrompt(targets: { phase: string; itemId: string; description: string; source?: string }[]): string {
@@ -118,18 +121,6 @@ ${targetsText}
     targetsBlock +
     MODULE_50_OUTPUTS_PROMPT +
     AI_ATTEMPT_OUTPUT_SCHEMA
-  );
-}
-
-export function buildPhase6Prompt(): string {
-  return (
-    HIERARCHY_INTRO +
-    EVIDENCE_RULES_PROMPT +
-    HIERARCHY_AFTER_EVIDENCE +
-    LOCKED_CONTEXT_INSTRUCTION +
-    PHASE_6_COMPLETION_PROMPT +
-    MODULE_50_OUTPUTS_PROMPT +
-    PHASE6_OUTPUT_SCHEMA
   );
 }
 
@@ -170,5 +161,20 @@ export function buildExpensesPrompt(): string {
     PHASE_3_EXPENSES_PROMPT +
     MODULE_50_OUTPUTS_PROMPT +
     EXPENSES_OUTPUT_SCHEMA
+  );
+}
+
+/** Build prompt for expenses additional run (supplement evidence – re-vouch only items with new evidence) */
+export function buildExpensesAdditionalPrompt(): string {
+  return (
+    HIERARCHY_INTRO +
+    EVIDENCE_RULES_PROMPT +
+    HIERARCHY_AFTER_EVIDENCE +
+    LOCKED_CONTEXT_INSTRUCTION +
+    EXPENSE_RISK_FRAMEWORK +
+    PHASE_3_ADDITIONAL_PROMPT +
+    PHASE_3_FUND_INTEGRITY +
+    MODULE_50_OUTPUTS_PROMPT +
+    EXPENSES_ADDITIONAL_OUTPUT_SCHEMA
   );
 }

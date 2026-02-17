@@ -42,9 +42,9 @@
 
 ## 三、架构方案构思
 
-### 方案 A：File Refs 替代 Base64（后端按需拉取）
+### 方案 A：File Refs 替代 Base64（后端按需拉取）——✅ 已落地
 
-**思路**：前端只上传到 Firebase Storage，请求体只传 `fileRefs`（storage path），Cloud Function 用 Admin SDK 从 Storage 读取。
+**思路**：前端只上传到 Firebase Storage，请求体只传 `filePaths`（storage path），Cloud Function 用 Admin SDK 从 Storage 读取。
 
 ```
 Frontend                          Cloud Function
@@ -53,8 +53,8 @@ Frontend                          Cloud Function
    |   (planId/file_xxx.pdf)              |
    |                                    |
    |-- POST { planId, mode, phase,       |
-   |         fileRefs: [path1, path2] } ->|
-   |                                    |-- getFiles(storage, fileRefs)
+   |         filePaths: [path1, path2] } ->|
+   |                                    |-- getFiles(storage, filePaths)
    |                                    |-- executePhase(files, step0)
    |<-- { levy_reconciliation } ---------|
 ```
@@ -212,7 +212,7 @@ AI Attempt 的 `mergeAiAttemptUpdates` 已是局部 patch 逻辑，可复用思�
 |------|------|----------|
 | 1 | 方案 B：`call2_select` + `phases`，单请求多 Phase | gemini.ts、geminiReview.js、App.tsx |
 | 2 | UI：Phase 勾选 + 「重跑 Phase X」按钮 | AuditReport.tsx、App.tsx |
-| 3 | 方案 A（可选）：fileRefs 替代 base64 | gemini.ts、geminiReview.js、Storage 读逻辑 |
+| 3 | ~~方案 A（可选）：fileRefs 替代 base64~~ ✅ 已实现：filePaths 替代 base64 | gemini.ts、index.js、Storage 读逻辑 |
 | 4 | 方案 C（可选）：planId 驱动、后端拉取上下文 | 需设计 Function 入口与鉴权 |
 
 优先完成阶段 1–2，即可实现 Phase 2–5 灵活调用，并显著减少 Call 2 的请求次数与上传次数。

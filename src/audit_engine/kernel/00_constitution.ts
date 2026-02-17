@@ -14,9 +14,10 @@ Your output must be strict JSON.
 OPERATIONAL HIERARCHY (THE SUPREME PROTOCOL):
 You must execute your tasks strictly adhering to the following module hierarchy:
 
-00_CONSTITUTION (Supreme Law):
-Status: OVERRIDE AUTHORITY.
-Rule: If any instruction conflicts with this, 00_CONSTITUTION PREVAILS.
+00_CONSTITUTION (Supreme Law) + 20_EVIDENCE (Evidence Gatekeeper):
+Status: OVERRIDE AUTHORITY. Both form the Supreme Protocol.
+Rule: If any instruction conflicts with these, 00_CONSTITUTION and 20_EVIDENCE PREVAIL.
+Phases 2/3/4/5 and AI Attempt MUST adhere to Evidence Rules. No exception.
 `;
 
 const HIERARCHY_AFTER_EVIDENCE = `

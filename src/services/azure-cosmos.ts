@@ -8,7 +8,7 @@
  * version so that App.tsx requires zero changes.
  */
 
-import type { AuditResponse } from "../audit_outputs/type_definitions";
+import type { AuditResponse, UserResolution, UserOverride, AiAttemptHistoryEntry, AdditionalRunMeta } from "../audit_outputs/type_definitions";
 import type { TriageItem } from "../audit_outputs/type_definitions";
 import { apiFetch } from "./api-client";
 
@@ -26,6 +26,10 @@ export interface PlanDoc {
   fileMeta?: FileMetaEntry[];
   result?: AuditResponse | null;
   triage?: TriageItem[];
+  user_resolutions?: UserResolution[];
+  user_overrides?: UserOverride[];
+  ai_attempt_history?: AiAttemptHistoryEntry[];
+  additional_runs?: AdditionalRunMeta[];
   error?: string | null;
   updatedAt?: number;
 }

@@ -64,8 +64,16 @@ export const LevyRecMasterSchema = z.object({
   Spec_Levy_Admin: TraceableValueSchema,
   Spec_Levy_Sink: TraceableValueSchema,
   Spec_Levy_Total: TraceableValueSchema,
-  Plus_Interest_Chgd: TraceableValueSchema,
-  Less_Discount_Given: TraceableValueSchema,
+  Plus_Interest_Chgd_Admin: TraceableValueSchema.optional(),
+  Plus_Interest_Chgd_Sink: TraceableValueSchema.optional(),
+  Plus_Interest_Chgd_Total: TraceableValueSchema.optional(),
+  Less_Discount_Given_Admin: TraceableValueSchema.optional(),
+  Less_Discount_Given_Sink: TraceableValueSchema.optional(),
+  Less_Discount_Given_Total: TraceableValueSchema.optional(),
+  /** @deprecated – use Plus_Interest_Chgd_Admin/Sink/Total; kept for backward compat */
+  Plus_Interest_Chgd: TraceableValueSchema.optional(),
+  /** @deprecated – use Less_Discount_Given_Admin/Sink/Total; kept for backward compat */
+  Less_Discount_Given: TraceableValueSchema.optional(),
   Plus_Legal_Recovery: TraceableValueSchema,
   Plus_Other_Recovery: TraceableValueSchema,
   Sub_Admin_Net: TraceableValueSchema,
@@ -73,7 +81,9 @@ export const LevyRecMasterSchema = z.object({
   Total_Levies_Net: TraceableValueSchema,
   GST_Admin: TraceableValueSchema,
   GST_Sink: TraceableValueSchema,
-  GST_Special: TraceableValueSchema,
+  GST_Special_Admin: TraceableValueSchema.optional(),
+  GST_Special_Sink: TraceableValueSchema.optional(),
+  GST_Special: TraceableValueSchema.optional(),
   Total_GST_Raised: TraceableValueSchema,
   Total_Gross_Inc: TraceableValueSchema,
   Admin_Fund_Receipts: TraceableValueSchema,
@@ -111,12 +121,23 @@ const VerificationStepSchema = z.object({
   evidence_ref: z.string(),
 });
 
+const SelectionDimensionSchema = z.enum([
+  "VALUE_COVERAGE",
+  "RISK_KEYWORD",
+  "MATERIALITY",
+  "ANOMALY_DESCRIPTION",
+  "SPLIT_PATTERN",
+  "RECURRING_NEAR_LIMIT",
+  "OTHER",
+]);
+
 /** Phase 3 v2: Risk-based expense selection */
 const ExpenseRiskProfileSchema = z.object({
   is_material: z.boolean(),
   risk_keywords: z.array(z.string()),
   is_split_invoice: z.boolean(),
   selection_reason: z.string(),
+  selection_dimension: SelectionDimensionSchema.optional(),
 });
 
 /** Phase 3 v2: Forensic evidence ref for expense pillars */
@@ -127,11 +148,49 @@ const ExpenseEvidenceRefSchema = z.object({
   extracted_amount: z.number().optional(),
 });
 
+/** Invoice sub-check: passed + evidence + observed value. */
+const InvoiceCheckItemSchema = z.object({
+  passed: z.boolean(),
+  evidence: ExpenseEvidenceRefSchema.optional(),
+  observed: z.string().optional(),
+});
+
+/** Invoice checks – REQUIRED per-check pass + evidence for Forensic. */
+const InvoiceChecksSchema = z.object({
+  sp_number: InvoiceCheckItemSchema,
+  address: InvoiceCheckItemSchema,
+  amount: InvoiceCheckItemSchema,
+  gst_verified: InvoiceCheckItemSchema,
+  payee_match: InvoiceCheckItemSchema,
+  abn_valid: InvoiceCheckItemSchema,
+});
+
+/** Payment sub-check: same structure as Invoice. */
+const PaymentCheckItemSchema = z.object({
+  passed: z.boolean(),
+  evidence: ExpenseEvidenceRefSchema.optional(),
+  observed: z.string().optional(),
+});
+
+/** Payment checks – REQUIRED. PAID: bank/ref/dup/split/date + ageing/subsequent N/A. ACCRUED: payee/amount/ageing/subsequent + others N/A. */
+const PaymentChecksSchema = z.object({
+  bank_account_match: PaymentCheckItemSchema,
+  payee_match: PaymentCheckItemSchema,
+  amount_match: PaymentCheckItemSchema,
+  reference_traceable: PaymentCheckItemSchema,
+  duplicate_check: PaymentCheckItemSchema,
+  split_payment_check: PaymentCheckItemSchema,
+  date_match: PaymentCheckItemSchema,
+  ageing_reasonableness: PaymentCheckItemSchema,
+  subsequent_payment_check: PaymentCheckItemSchema,
+});
+
 /** Phase 3 v2: Three-way match */
 const ThreeWayMatchSchema = z.object({
   invoice: z.object({
     id: z.string(),
     date: z.string(),
+    checks: InvoiceChecksSchema,
     payee_match: z.boolean(),
     abn_valid: z.boolean(),
     addressed_to_strata: z.boolean(),
@@ -143,6 +202,7 @@ const ThreeWayMatchSchema = z.object({
     amount_match: z.boolean(),
     source_doc: z.string().optional(),
     creditors_ref: z.string().optional(),
+    checks: PaymentChecksSchema,
     evidence: ExpenseEvidenceRefSchema.optional(),
   }),
   authority: z.object({
@@ -151,7 +211,7 @@ const ThreeWayMatchSchema = z.object({
     minute_ref: z.string().optional(),
     status: z.enum(["AUTHORISED", "UNAUTHORISED", "NO_MINUTES_FOUND", "MINUTES_NOT_AVAILABLE"]),
     evidence: ExpenseEvidenceRefSchema.optional(),
-  }),
+  }).optional(),
 });
 
 /** Phase 3 v2: Fund classification (Admin vs Capital) */
@@ -185,6 +245,16 @@ const ExpenseSampleSchema = z.object({
   verification_steps: z.array(VerificationStepSchema).optional(),
 });
 
+/** Expense run – initial or additional. */
+const ExpenseRunSchema = z.object({
+  run_id: z.string(),
+  run_type: z.enum(["initial", "additional"]),
+  created_at: z.string(),
+  file_paths: z.array(z.string()).optional(),
+  document_ids: z.array(z.string()).optional(),
+  expense_samples: z.array(ExpenseSampleSchema),
+});
+
 /** Step 0: Full Balance Sheet extract – single source of truth for Phase 2/4/5 */
 const BsExtractRowSchema = z.object({
   line_item: z.string(),
@@ -198,6 +268,21 @@ const BsExtractSchema = z.object({
   prior_year_label: z.string(),
   current_year_label: z.string(),
   rows: z.array(BsExtractRowSchema),
+});
+
+/** Step 0: Income & Expenditure (P&L) extract – same structure as bs_extract */
+const PlExtractRowSchema = z.object({
+  line_item: z.string(),
+  section: z.enum(["INCOME", "EXPENDITURE", "SURPLUS_DEFICIT"]).optional(),
+  fund: z.string().optional(),
+  prior_year: z.number(),
+  current_year: z.number(),
+});
+
+const PlExtractSchema = z.object({
+  prior_year_label: z.string(),
+  current_year_label: z.string(),
+  rows: z.array(PlExtractRowSchema),
 });
 
 /** Phase 4: bs_amount = from LOCKED bs_extract (current_year for most; prior_year for RULE 1 only); supporting_amount = from R2–R5 evidence only. */
@@ -292,6 +377,7 @@ export const AuditResponseSchema = z.object({
   document_register: z.array(DocumentEntrySchema),
   intake_summary: IntakeSummarySchema,
   bs_extract: BsExtractSchema.optional(),
+  pl_extract: PlExtractSchema.optional(),
   levy_reconciliation: LevyRecSchema.optional(),
   assets_and_cash: z
     .object({
@@ -299,6 +385,7 @@ export const AuditResponseSchema = z.object({
     })
     .optional(),
   expense_samples: z.array(ExpenseSampleSchema).optional(),
+  expense_runs: z.array(ExpenseRunSchema).optional(),
   statutory_compliance: StatutoryComplianceSchema.optional(),
   completion_outputs: CompletionOutputsSchema.optional(),
 });
