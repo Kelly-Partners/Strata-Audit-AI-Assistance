@@ -2,7 +2,7 @@
 
 ## Overview
 
-Full migration from Google Gemini + Firebase to Azure enterprise solution.
+Full migration from Google Gemini + Firebase to Azure enterprise solution. **Migration complete.**
 
 **Key architectural decision:** GPT-5 on Azure supports direct PDF file input via the Responses API, so no need for Azure Document Intelligence. This keeps the architecture single-stage (like Gemini), simplifying the migration.
 
@@ -10,25 +10,25 @@ Full migration from Google Gemini + Firebase to Azure enterprise solution.
 
 | Phase | Component | From | To | Status |
 |---|---|---|---|---|
-| 1 | AI Backend | Firebase Cloud Functions + Gemini | Azure Functions (.NET 10) + GPT-5.1-chat Responses API | Code Done |
-| 2 | Frontend API | `gemini.ts` (Firebase Function client) | `auditApi.ts` (Azure Function client) | Code Done |
-| 3 | Authentication | Firebase Auth | Microsoft Entra ID (MSAL) | Code Done |
-| 4 | Database | Firestore | Azure Cosmos DB (NoSQL API) | Code Done |
-| 5 | File Storage | Firebase Cloud Storage | Azure Blob Storage | Code Done |
-| 6 | Cleanup | Remove Firebase dependencies | Azure-only codebase | Done |
-| 7 | Prompt Admin | N/A (hardcoded prompts) | Prompt Admin & Playground page | Code Done |
-| 8 | Hosting | Firebase Hosting | Azure Static Web Apps | Not started |
+| 1 | AI Backend | Firebase Cloud Functions + Gemini | Azure Functions (.NET 10) + GPT-5 Responses API | **Done** |
+| 2 | Frontend API | `gemini.ts` (Firebase Function client) | `auditApi.ts` (Azure Function client) | **Done** |
+| 3 | Authentication | Firebase Auth | Microsoft Entra ID (MSAL) | **Done** |
+| 4 | Database | Firestore | Azure Cosmos DB (NoSQL API, proxied through Functions) | **Done** |
+| 5 | File Storage | Firebase Cloud Storage | Azure Blob Storage (proxied through Functions) | **Done** |
+| 6 | Cleanup | Remove Firebase dependencies | Azure-only codebase | **Done** |
+| 7 | Prompt Admin | N/A (hardcoded prompts) | Prompt Admin & Playground page | **Done** |
+| 8 | Hosting | Firebase Hosting | Azure Static Web Apps | **Done** |
 
 ### Azure Resource Provisioning Status
 
 | Step | Resource | Status | Details |
 |---|---|---|---|
 | 1 | Azure OpenAI | **Deployed** | `strata-audit-openai`, model `gpt-5.1-chat` (v2025-11-13), 150K TPM |
-| 2 | Azure Function App | **Deployed** | `strata-audit-functions`, .NET 10, Flex Consumption, verified working |
+| 2 | Azure Function App | **Deployed** | `strata-audit-functions`, .NET 10, Flex Consumption, 8 endpoints live |
 | 3 | Azure Cosmos DB | **Deployed** | `strata-audit-cosmos`, NoSQL API, Serverless, db `strata-audit`, container `plans` (`/userId`) |
 | 4 | Azure Blob Storage | **Deployed** | `strataauditstorage`, Standard LRS, Hot tier, container `plan-files` |
 | 5 | Microsoft Entra ID | **Deployed** | App `Strata Audit AI Assistance`, client ID `5276b52b-...`, tenant `b35ee03f-...` |
-| 6 | Azure Static Web Apps | **Deployed** | `strata-tax-review-assistance-web`, custom domain: `https://strata-tax-review-assistance.kellypartners.com` |
+| 6 | Azure Static Web Apps | **Deployed** | `strata-tax-review-assistance-web`, URL: `https://calm-bay-04b28e900.6.azurestaticapps.net` |
 
 ## Detailed Phase Notes
 
@@ -38,14 +38,14 @@ Full migration from Google Gemini + Firebase to Azure enterprise solution.
 
 ```
 Gemini:  base64 PDF → Gemini inlineData → Gemini reasons → JSON
-Azure:   base64 PDF → GPT-5.1-chat input_file → GPT-5.1-chat reasons → JSON
+Azure:   base64 PDF → GPT-5 input_file → GPT-5 reasons → JSON
 ```
 
 **Key files created:**
 - `StrataAudit.Functions/` - .NET 10 Azure Functions project
-- `Functions/ExecuteFullReviewFunction.cs` - HTTP trigger (POST /api/executeFullReview)
-- `Services/AuditReviewService.cs` - GPT-5.1-chat Responses API integration
-- `Services/UserInstructionBuilder.cs` - Mode-switching logic ported from `functions/geminiReview.js`
+- `Functions/ExecuteFullReviewFunction.cs` - HTTP trigger (POST /api/executeFullReview), supports server-side file fetching from Blob Storage
+- `Services/AuditReviewService.cs` - GPT-5 Responses API integration
+- `Services/UserInstructionBuilder.cs` - Mode-switching logic with Evidence Tier enforcement per phase
 
 **API mapping:**
 | Gemini | Azure OpenAI |
@@ -55,30 +55,20 @@ Azure:   base64 PDF → GPT-5.1-chat input_file → GPT-5.1-chat reasons → JSO
 | `responseMimeType: "application/json"` | `text.format: { type: "json_object" }` |
 | Chat Completions API | Responses API (`/openai/v1/responses`) |
 
-**Deployed Azure resources:**
-- OpenAI resource: `strata-audit-openai` (endpoint: `https://strata-audit-openai.openai.azure.com/`)
-- Model: `gpt-5.1-chat` (v2025-11-13, 150K TPM, auto-upgrade enabled, retiring March 31 2026)
-- Function App: `strata-audit-functions` (endpoint: `https://strata-audit-functions.azurewebsites.net/api/executefullreview`)
-- Function App settings configured: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`
-- CORS: `http://localhost:3000` (SWA domain to be added post-deployment)
-
 ### Phase 3: Authentication
 
 **MSAL replaces Firebase Auth with these mappings:**
 | Firebase | MSAL |
 |---|---|
 | `onAuthStateChanged(auth, callback)` | `msalOnAuthStateChanged(callback)` via event callbacks |
-| `signInWithPopup(auth, GoogleAuthProvider)` | `msalInstance.loginPopup()` |
-| `signInWithEmailAndPassword(auth, email, pw)` | MSAL B2C ROPC or popup |
-| `signOut(auth)` | `msalInstance.logoutPopup()` |
+| `signInWithPopup(auth, GoogleAuthProvider)` | `msalInstance.loginRedirect()` |
+| `signOut(auth)` | `msalInstance.logoutRedirect()` |
 | `user.getIdToken()` | `msalInstance.acquireTokenSilent()` |
 | `User` type | `AzureUser` adapter type |
 
-### Phase 4: Database
+### Phase 4: Database (Proxied)
 
-**Cosmos DB NoSQL API replaces Firestore — proxied through Azure Functions:**
-
-All Cosmos DB operations are proxied through Azure Functions (no direct SDK access from frontend). The backend holds the Cosmos DB connection key server-side and extracts userId from the MSAL Bearer JWT token.
+**Cosmos DB NoSQL API replaces Firestore — all operations proxied through Azure Functions:**
 
 | Frontend function | Azure Function endpoint | Cosmos DB operation |
 |---|---|---|
@@ -88,19 +78,21 @@ All Cosmos DB operations are proxied through Azure Functions (no direct SDK acce
 
 Container: `plans` with partition key `/userId`
 
-### Phase 5: File Storage
+### Phase 5: File Storage (Proxied)
 
-**Azure Blob Storage replaces Firebase Cloud Storage — proxied through Azure Functions:**
-
-All Blob Storage operations are proxied through Azure Functions (no direct SDK access from frontend). Files are sent as base64 JSON payloads.
+**Azure Blob Storage replaces Firebase Cloud Storage — all operations proxied through Azure Functions:**
 
 | Frontend function | Azure Function endpoint | Blob operation |
 |---|---|---|
 | `uploadPlanFiles(userId, planId, files)` | `POST /api/plans/{planId}/files` | Upload base64 files to blobs |
+| `uploadAdditionalRunFiles(userId, planId, runId, files)` | `POST /api/plans/{planId}/files` (with runId) | Upload additional evidence files |
 | `loadPlanFilesFromStorage(filePaths)` | `POST /api/plans/{planId}/files/load` | Download blobs as base64 |
+| `getFileUrl(planId, blobPath)` | `POST /api/plans/{planId}/files/url` | Generate time-limited SAS URL for PDF viewing |
 | `deletePlanFilesFromStorage(userId, planId)` | `DELETE /api/plans/{planId}/files` | Delete all plan blobs |
 
 Container: `plan-files`, path structure: `users/{userId}/plans/{planId}/{fileName}`
+
+**Server-side file fetching:** `ExecuteFullReviewFunction` can fetch files directly from Blob Storage when `filePaths` are provided but `files[]` is empty, avoiding re-upload of large PDFs for Call 2 phases.
 
 ### Phase 7: Prompt Admin
 
@@ -110,21 +102,12 @@ New `PromptAdmin.tsx` component with:
 - Test runner (upload PDFs → run single phase → see results)
 - Threshold controls (materiality, tolerance, GST rate, etc.)
 
-## Azure Resources (Manual Portal Setup)
-
-1. **Azure OpenAI** — `strata-audit-openai`, GPT-5.1-chat deployed, Australia East ✅
-2. **Azure Function App** — `strata-audit-functions`, .NET 10 isolated worker, Flex Consumption, Australia East ✅
-3. **Azure Cosmos DB** — `strata-audit-cosmos`, NoSQL API, Serverless, database `strata-audit`, container `plans` (partition key `/userId`) ✅
-4. **Azure Blob Storage** — `strataauditstorage`, Standard LRS, Hot tier, container `plan-files` ✅
-5. **Microsoft Entra ID** — App registration `Strata Audit AI Assistance`, SPA redirect `http://localhost:3000` ✅
-6. **Azure Static Web Apps** — `strata-tax-review-assistance-web`, custom domain: `https://strata-tax-review-assistance.kellypartners.com` ✅
-
 ## Build Verification
 
-- [x] Frontend `npm run build` — passes (zero errors, one warning: 1.3MB chunk size from Monaco editor)
+- [x] Frontend `npm run build` — passes (zero errors; chunk size warning from Monaco editor — acceptable)
 - [x] Backend `dotnet build` — passes (zero errors, zero warnings)
-- [x] Azure Function local test (`func start` + curl) — returns expected 400 validation error
-- [x] Azure Function deployed and live — returns expected 400 validation error at production URL
+- [x] Azure Functions deployed and live — 8 endpoints registered
+- [x] Azure Static Web Apps deployed to production
 
 ## Cleanup Completed
 
@@ -132,18 +115,33 @@ New `PromptAdmin.tsx` component with:
 - [x] Deleted old source implementations: `src/services/firebase.ts`, `src/services/gemini.ts`, `src/services/geminiService.ts`, `src/services/planPersistence.ts`
 - [x] Deleted Firebase config: `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`, `storage.rules`
 - [x] Deleted entire `functions/` directory (old Firebase Cloud Functions)
-- [x] Kept `services/mergeAiAttemptUpdates.ts` (still used by App.tsx)
 - [x] Updated `.gitignore` for Azure project structure (secrets, .NET artifacts, IDE files)
+- [x] Removed `@azure/cosmos` and `@azure/storage-blob` from frontend `package.json` (server-side only)
+
+## Upstream Port (15 commits from main)
+
+Ported all audit engine updates from the accountant's main branch commits to develop:
+
+- **Evidence Tier System** — 3-tier classification elevated to Supreme Protocol, per-phase enforcement
+- **P&L Extract** (`pl_extract`) — New Step 0 output for Income & Expenditure
+- **Expense Phase Overhaul** — 5 selection dimensions, 6 invoice checks, 9 payment checks
+- **Multi-round Expense Runs** — `expenses_additional` mode for supplementary evidence vouching
+- **Levy Per-Fund Split** — Interest/Discount split into Admin/Sinking/Total, GST on special levies
+- **Phase 6 Removed** — Completion now shows user resolutions, not AI-generated output
+- **AI Attempt → Explain-only** — Produces resolution table but does not merge into report data
+- **System Triage** — Auto-generated from Phase 2-5 non-reconciled results
+- **User Resolutions** — Mark-off workflow (Resolve/Flag/Override) replacing deprecated UserOverride
+- **UI Redesign** — K+P blue branding (#004F9F), semantic font tokens, shimmer skeleton
 
 ## End-to-End Verification Checklist
 
 - [x] Azure Function responds to POST → returns expected validation error
-- [ ] Frontend loads at SWA URL
+- [x] Frontend deployed to SWA production URL
 - [ ] Microsoft sign-in works, user sees dashboard
 - [ ] Create plan → files upload to Blob Storage
 - [ ] Run Step 0 → audit result saved to Cosmos DB
 - [ ] Refresh page → plan and files persist
 - [ ] Run Call 2 → four phases complete in parallel
-- [ ] AI Attempt → re-verification with additional evidence
-- [ ] Phase 6 Completion → final aggregated report
+- [ ] AI Attempt → re-verification with resolution table
+- [ ] Forensic PDF viewer → SAS URL opens source document
 - [ ] Prompt Admin → edit prompt → test → see results
