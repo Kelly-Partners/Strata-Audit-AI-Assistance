@@ -412,6 +412,7 @@ const App: React.FC = () => {
       if (hasFiles) filePaths = await uploadPlanFiles(userId, planId, targetPlan.files!);
       const runPhase = (phase: "levy" | "phase4" | "expenses" | "compliance") =>
         callExecuteFullReview({
+          files: targetPlan.files,
           filePaths,
           expectedPlanId: planId,
           mode: phase,
@@ -511,6 +512,7 @@ const App: React.FC = () => {
         updatePlan(planId, { filePaths });
       }
       const res = await callExecuteFullReview({
+        files: targetPlan.files,
         filePaths,
         expectedPlanId: planId,
         mode: "aiAttempt",
@@ -604,6 +606,7 @@ const App: React.FC = () => {
         expense_samples: getEffectiveExpenseSamples(mergedSoFar),
       };
       const res = await callExecuteFullReview({
+        files: [...targetPlan.files, ...newFiles],
         filePaths: targetPlan.filePaths ?? [],
         additionalRunPaths: { runId, paths: additionalPaths },
         expectedPlanId: planId,
@@ -674,6 +677,7 @@ const App: React.FC = () => {
     try {
       if (hasFiles) filePaths = await uploadPlanFiles(userId, planId, targetPlan.files);
       const auditResult = await callExecuteFullReview({
+        files: targetPlan.files,
         filePaths,
         expectedPlanId: planId,
         mode: 'step0_only',
@@ -732,6 +736,7 @@ const App: React.FC = () => {
 
       // 2) Call Azure Function to execute audit
       const auditResult = await callExecuteFullReview({
+        files: targetPlan.files,
         filePaths,
         previousAudit: targetPlan.result ?? undefined,
         expectedPlanId: planId,
