@@ -40,7 +40,7 @@ const fileToBase64 = (file: File): Promise<string> =>
   });
 
 export interface CallExecuteFullReviewOptions {
-  files: File[];
+  files?: File[];
   filePaths?: string[];
   additionalRunPaths?: { runId: string; paths: string[] };
   previousAudit?: AuditResponse | null;
@@ -68,7 +68,7 @@ export async function callExecuteFullReview(
   options: CallExecuteFullReviewOptions
 ): Promise<AuditResponse> {
   const {
-    files,
+    files = [],
     filePaths,
     additionalRunPaths,
     previousAudit,
@@ -83,16 +83,19 @@ export async function callExecuteFullReview(
   // Get MSAL access token (replaces Firebase getIdToken)
   const accessToken = await getAccessToken();
 
-  const fileManifest =
-    mode === "aiAttempt" && fileMeta?.length === files.length
-      ? files
-          .map(
-            (f, i) =>
-              `File Part ${i + 1}: ${f.name}${fileMeta[i]?.batch === "additional" ? " [ADDITIONAL]" : ""}`
-          )
-          .join("\n")
-      : files.map((f, i) => `File Part ${i + 1}: ${f.name}`).join("\n");
+  // Build file manifest from local File objects (if any) or filePaths for server-side fetching
+  const fileManifest = files.length > 0
+    ? (mode === "aiAttempt" && fileMeta?.length === files.length
+        ? files
+            .map(
+              (f, i) =>
+                `File Part ${i + 1}: ${f.name}${fileMeta[i]?.batch === "additional" ? " [ADDITIONAL]" : ""}`
+            )
+            .join("\n")
+        : files.map((f, i) => `File Part ${i + 1}: ${f.name}`).join("\n"))
+    : (filePaths ?? []).map((p, i) => `File Part ${i + 1}: ${p.split("/").pop()}`).join("\n");
 
+  // Convert local File objects to base64 payload (empty when using server-side file fetching)
   const filesPayload = await Promise.all(
     files.map(async (file) => {
       const data = await fileToBase64(file);
